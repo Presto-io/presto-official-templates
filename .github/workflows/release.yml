@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    strategy:
+      matrix:
+        template: [gongwen, jiaoan-shicao]
+        os: [darwin, linux, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          cd ${{ matrix.template }}
+          EXT=""
+          if [ "${{ matrix.os }}" = "windows" ]; then EXT=".exe"; fi
+          go build -trimpath -ldflags="-s -w" -o "../presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: presto-template-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: sha256sum presto-template-* > SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            presto-template-*
+            SHA256SUMS
+          generate_release_notes: true
