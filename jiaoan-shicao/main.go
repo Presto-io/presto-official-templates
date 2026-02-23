@@ -6,9 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -18,15 +16,42 @@ var manifestJSON string
 //go:embed example.md
 var exampleMD string
 
-var (
-	isTemplate   bool
-	isPdf        bool
-	verbose      bool
-	help         bool
-	manifestFlag bool
-	exampleFlag  bool
-	versionFlag  bool
-)
+func main() {
+	manifestFlag := flag.Bool("manifest", false, "output manifest JSON")
+	exampleFlag := flag.Bool("example", false, "output example markdown")
+	versionFlag := flag.Bool("version", false, "output version")
+	flag.Parse()
+
+	if *versionFlag {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(manifestJSON), &m); err == nil {
+			if v, ok := m["version"]; ok {
+				fmt.Println(v)
+			}
+		}
+		return
+	}
+
+	if *manifestFlag {
+		fmt.Print(manifestJSON)
+		return
+	}
+
+	if *exampleFlag {
+		fmt.Print(exampleMD)
+		return
+	}
+
+	source, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
+		os.Exit(1)
+	}
+
+	sections := parseMarkdown(string(source))
+	typstOutput := generateTypst(sections)
+	fmt.Print(typstOutput)
+}
 
 const preamble = `// 中文字号转换函数
 #import "@preview/pointless-size:0.1.2": zh
@@ -83,132 +108,6 @@ type Table struct {
 type DocumentSection struct {
 	H2Title string
 	Tables  []Table
-}
-
-const templateMd = `## 教学活动设计——任务一
-
-### 章节标题——任务描述
-
-#### 教学活动标题
-
-##### 1H
-
-学习内容
-
-学生活动
-
-教师活动
-
-教学方法与手段
-`
-
-func init() {
-	flag.BoolVar(&isTemplate, "t", false, "生成空白模板文件 template.md")
-	flag.BoolVar(&isPdf, "p", false, "生成 PDF 文件（需要安装 typst）")
-	flag.BoolVar(&verbose, "v", false, "显示详细输出信息")
-	flag.BoolVar(&help, "h", false, "显示帮助信息")
-	flag.BoolVar(&manifestFlag, "manifest", false, "output manifest JSON")
-	flag.BoolVar(&exampleFlag, "example", false, "output example markdown")
-	flag.BoolVar(&versionFlag, "version", false, "output version")
-}
-
-func printHelp() {
-	fmt.Println("实操教案格式化生成器")
-	fmt.Println("用法: shicaojiaoan [选项] [输入文件]")
-	fmt.Println()
-	fmt.Println("选项:")
-	flag.PrintDefaults()
-}
-
-func main() {
-	flag.Parse()
-
-	if versionFlag {
-		var m map[string]interface{}
-		if err := json.Unmarshal([]byte(manifestJSON), &m); err == nil {
-			if v, ok := m["version"]; ok {
-				fmt.Println(v)
-			}
-		}
-		return
-	}
-
-	if manifestFlag {
-		fmt.Print(manifestJSON)
-		return
-	}
-
-	if exampleFlag {
-		fmt.Print(exampleMD)
-		return
-	}
-
-	if help {
-		printHelp()
-		return
-	}
-
-	// 处理生成模板的情况
-	if isTemplate {
-		if err := os.WriteFile("template.md", []byte(templateMd), 0644); err != nil {
-			log.Fatalf("failed to generate template: %v", err)
-		}
-		if verbose {
-			log.Printf("template file generated: template.md")
-		}
-		return
-	}
-
-	// 如果没有文件参数，从 stdin 读取并输出到 stdout
-	if flag.NArg() == 0 {
-		source, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			log.Fatalf("failed to read stdin: %v", err)
-		}
-
-		sections := parseMarkdown(string(source))
-		typstOutput := generateTypst(sections)
-		fmt.Print(typstOutput)
-		return
-	}
-
-	inputFile := flag.Arg(0)
-	source, err := os.ReadFile(inputFile)
-	if err != nil {
-		log.Fatalf("failed to read file: %v", err)
-	}
-
-	// 解析并生成 typst
-	sections := parseMarkdown(string(source))
-	typstOutput := generateTypst(sections)
-
-	outputFile := strings.TrimSuffix(inputFile, ".md") + ".typ"
-	if err := os.WriteFile(outputFile, []byte(typstOutput), 0644); err != nil {
-		log.Fatalf("failed to write file: %v", err)
-	}
-
-	if verbose {
-		log.Printf("converted %s to %s", inputFile, outputFile)
-	}
-
-	// PDF 生成处理
-	if isPdf {
-		if _, err := exec.LookPath("typst"); err != nil {
-			log.Fatal("typst command not found, please install typst first")
-		}
-
-		cmd := exec.Command("typst", "compile", outputFile)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("PDF generation failed: %v", err)
-		}
-
-		pdfFile := strings.TrimSuffix(outputFile, ".typ") + ".pdf"
-		if verbose {
-			log.Printf("PDF file generated: %s", pdfFile)
-		}
-	}
 }
 
 // parseMarkdown 将 markdown 字符串解析为 DocumentSection 结构体切片

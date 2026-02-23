@@ -878,7 +878,6 @@ func main() {
 	manifestFlag := flag.Bool("manifest", false, "output manifest JSON")
 	exampleFlag := flag.Bool("example", false, "output example markdown")
 	versionFlag := flag.Bool("version", false, "output version")
-	outputFile := flag.String("o", "", "output .typ file (default: stdout)")
 	flag.Parse()
 
 	if *versionFlag {
@@ -901,14 +900,7 @@ func main() {
 		return
 	}
 
-	var input []byte
-	var err error
-	args := flag.Args()
-	if len(args) > 0 {
-		input, err = os.ReadFile(args[0])
-	} else {
-		input, err = io.ReadAll(os.Stdin)
-	}
+	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
 		os.Exit(1)
@@ -916,13 +908,5 @@ func main() {
 
 	fm, body := parseFrontMatter(string(input))
 	result := convert(fm, body)
-
-	if *outputFile != "" {
-		if err := os.WriteFile(*outputFile, []byte(result), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", *outputFile, err)
-			os.Exit(1)
-		}
-	} else {
-		fmt.Print(result)
-	}
+	fmt.Print(result)
 }
