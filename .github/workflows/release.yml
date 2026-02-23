@@ -8,11 +8,64 @@ permissions:
   contents: write
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      templates: ${{ steps.detect.outputs.templates }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed templates
+        id: detect
+        shell: bash
+        run: |
+          ALL_TEMPLATES='["gongwen","jiaoan-shicao"]'
+
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "First release, building all templates"
+            echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Comparing $PREV_TAG..HEAD"
+          CHANGED=$(git diff --name-only "$PREV_TAG"..HEAD)
+          echo "$CHANGED"
+
+          # Shared files changed → rebuild all
+          if echo "$CHANGED" | grep -qE '^(go\.(mod|sum)|\.github/)'; then
+            echo "Shared files changed, building all templates"
+            echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Detect which template dirs have changes
+          TEMPLATES=()
+          for dir in gongwen jiaoan-shicao; do
+            if echo "$CHANGED" | grep -q "^${dir}/"; then
+              TEMPLATES+=("\"$dir\"")
+            fi
+          done
+
+          if [ ${#TEMPLATES[@]} -eq 0 ]; then
+            echo "No template changes detected, building all as fallback"
+            echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
+          else
+            RESULT="[$(IFS=,; echo "${TEMPLATES[*]}")]"
+            echo "Building changed templates: $RESULT"
+            echo "templates=$RESULT" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: changes
     runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
     strategy:
       matrix:
-        template: [gongwen, jiaoan-shicao]
+        template: ${{ fromJson(needs.changes.outputs.templates) }}
         os: [darwin, linux, windows]
         arch: [amd64, arm64]
     steps:
