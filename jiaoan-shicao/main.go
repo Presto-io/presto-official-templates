@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Presto-io/presto-official-templates/internal/cli"
+	"github.com/Presto-io/presto-official-templates/internal/typst"
 )
 
 //go:embed manifest.json
@@ -188,7 +189,7 @@ func generateTypst(sections []DocumentSection) string {
 	sb.WriteString(preamble)
 
 	for _, section := range sections {
-		sb.WriteString(fmt.Sprintf("\n== %s\n\n", section.H2Title))
+		sb.WriteString(fmt.Sprintf("\n== %s\n\n", typst.EscapeContent(section.H2Title)))
 
 		if len(section.Tables) > 0 {
 			sb.WriteString("#table(\n")
@@ -198,7 +199,7 @@ func generateTypst(sections []DocumentSection) string {
 
 			for _, table := range section.Tables {
 				// 表格第一行
-				sb.WriteString(fmt.Sprintf("  [*学习环节*], [*%s*], [*学习单元*], table.cell(colspan: 3)[*%s*],\n", table.H3Part1, table.H3Part2))
+				sb.WriteString(fmt.Sprintf("  [*学习环节*], [*%s*], [*学习单元*], table.cell(colspan: 3)[*%s*],\n", typst.EscapeContent(table.H3Part1), typst.EscapeContent(table.H3Part2)))
 
 				// 表格第二行
 				sb.WriteString("  [教学活动], [学习内容], [学生活动], [教师活动], [教学方法与手段], [课时分配],\n")
@@ -217,11 +218,11 @@ func generateTypst(sections []DocumentSection) string {
 					for i := 0; i < nRows; i++ {
 						h5 := h4.H5Blocks[i]
 						cellContents[i] = make([]string, cols)
-						cellContents[i][0] = getContentLine(h5.Content, 0)
-						cellContents[i][1] = getContentLine(h5.Content, 1)
-						cellContents[i][2] = getContentLine(h5.Content, 2)
-						cellContents[i][3] = getContentLine(h5.Content, 3) // 教学方法，渲染时会替换换行
-						cellContents[i][4] = h5.Title
+						cellContents[i][0] = typst.EscapeContent(getContentLine(h5.Content, 0))
+						cellContents[i][1] = typst.EscapeContent(getContentLine(h5.Content, 1))
+						cellContents[i][2] = typst.EscapeContent(getContentLine(h5.Content, 2))
+						cellContents[i][3] = typst.EscapeContent(getContentLine(h5.Content, 3)) // 教学方法，渲染时会替换换行
+						cellContents[i][4] = typst.EscapeContent(h5.Title)
 					}
 
 					// 初始化 rowspan 矩阵，默认每个单元格 rowspan = 1
@@ -254,7 +255,7 @@ func generateTypst(sections []DocumentSection) string {
 						}
 					}
 
-					numberedH4Title := fmt.Sprintf("%d. %s", h4Counter, h4.Title)
+					numberedH4Title := fmt.Sprintf("%d. %s", h4Counter, typst.EscapeContent(h4.Title))
 					h4Counter++
 
 					// 为每列在输出时维护独立序号计数器（H4 内重置）
