@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/Presto-io/presto-official-templates/internal/cli"
+	"github.com/Presto-io/presto-official-templates/internal/typst"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
@@ -124,7 +125,7 @@ func formatDate(date string) string {
 		day := strings.TrimLeft(m[3], "0")
 		return fmt.Sprintf("datetime(\n  year: %s,\n  month: %s,\n  day: %s,\n)", year, month, day)
 	}
-	return fmt.Sprintf(`"%s"`, date)
+	return fmt.Sprintf(`"%s"`, typst.EscapeString(date))
 }
 
 // ---------- Punctuation conversion ----------
@@ -278,7 +279,7 @@ func (c *converter) renderInline(n ast.Node) string {
 	case ast.KindText:
 		t := n.(*ast.Text)
 		raw := string(t.Segment.Value(c.source))
-		result := convertPunctuation(raw)
+		result := typst.EscapeContent(convertPunctuation(raw))
 		if t.SoftLineBreak() {
 			result += "\n"
 		}
@@ -289,7 +290,7 @@ func (c *converter) renderInline(n ast.Node) string {
 
 	case ast.KindString:
 		raw := html.UnescapeString(string(n.(*ast.String).Value))
-		return convertPunctuation(raw)
+		return typst.EscapeContent(convertPunctuation(raw))
 
 	case ast.KindCodeSpan:
 		var code strings.Builder
@@ -311,12 +312,12 @@ func (c *converter) renderInline(n ast.Node) string {
 	case ast.KindLink:
 		link := n.(*ast.Link)
 		inner := c.renderInlines(n)
-		return fmt.Sprintf(`#link("%s")[%s]`, string(link.Destination), inner)
+		return fmt.Sprintf(`#link("%s")[%s]`, typst.EscapeString(string(link.Destination)), inner)
 
 	case ast.KindAutoLink:
 		al := n.(*ast.AutoLink)
 		url := string(al.URL(c.source))
-		return fmt.Sprintf(`#link("%s")`, url)
+		return fmt.Sprintf(`#link("%s")`, typst.EscapeString(url))
 
 	case ast.KindImage:
 		return ""
@@ -346,6 +347,8 @@ func (c *converter) renderSingleImage(img *ast.Image) string {
 	path := string(img.Destination)
 	filename := filepath.Base(path)
 	caption := strings.TrimSuffix(filename, filepath.Ext(filename))
+	escapedPath := typst.EscapeString(path)
+	escapedCaption := typst.EscapeContent(caption)
 
 	return fmt.Sprintf(`#figure(
   context {
@@ -374,7 +377,7 @@ func (c *converter) renderSingleImage(img *ast.Image) string {
   },
   caption: [%s],
 ) <fig-%d>
-`, path, path, caption, c.figureCounter)
+`, escapedPath, escapedPath, escapedCaption, c.figureCounter)
 }
 
 // renderMultiImage generates Typst code for multiple images in one paragraph.
@@ -415,9 +418,9 @@ func (c *converter) renderMultiImage(images []*ast.Image) string {
 	var pathsStr, captionsStr, altsStr []string
 	mainCaption := ""
 	for _, info := range infos {
-		pathsStr = append(pathsStr, fmt.Sprintf(`"%s"`, info.path))
-		captionsStr = append(captionsStr, fmt.Sprintf(`"%s"`, info.caption))
-		altsStr = append(altsStr, fmt.Sprintf(`"%s"`, info.alt))
+		pathsStr = append(pathsStr, fmt.Sprintf(`"%s"`, typst.EscapeString(info.path)))
+		captionsStr = append(captionsStr, fmt.Sprintf(`"%s"`, typst.EscapeString(info.caption)))
+		altsStr = append(altsStr, fmt.Sprintf(`"%s"`, typst.EscapeString(info.alt)))
 	}
 	if isSubfigure && len(infos) > 0 {
 		mainCaption = infos[0].alt
@@ -535,7 +538,7 @@ func (c *converter) renderMultiImage(images []*ast.Image) string {
 }
 
 `, strings.Join(pathsStr, ", "), strings.Join(captionsStr, ", "),
-		strings.Join(altsStr, ", "), strconv.FormatBool(isSubfigure), mainCaption)
+		strings.Join(altsStr, ", "), strconv.FormatBool(isSubfigure), typst.EscapeString(mainCaption))
 }
 
 // vMarkerRe matches {v} or {v:N}
@@ -817,8 +820,8 @@ func convert(fm frontMatter, body string) string {
 	var out strings.Builder
 
 	out.WriteString(templateHead)
-	fmt.Fprintf(&out, "#let autoTitle = \"%s\"\n\n", fm.Title)
-	fmt.Fprintf(&out, "#let autoAuthor = \"%s\"\n\n", fm.Author)
+	fmt.Fprintf(&out, "#let autoTitle = \"%s\"\n\n", typst.EscapeString(fm.Title))
+	fmt.Fprintf(&out, "#let autoAuthor = \"%s\"\n\n", typst.EscapeString(fm.Author))
 	fmt.Fprintf(&out, "#let autoDate = %s\n\n", formatDate(fm.Date))
 
 	out.WriteString(`#set document(

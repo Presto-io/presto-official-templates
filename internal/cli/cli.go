@@ -39,9 +39,14 @@ func Run(manifestJSON, exampleMD string, convert func(string) string) {
 		return
 	}
 
-	input, err := io.ReadAll(os.Stdin)
+	const maxInputSize = 10 << 20 // 10 MB
+	input, err := io.ReadAll(io.LimitReader(os.Stdin, maxInputSize+1))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
+		os.Exit(1)
+	}
+	if len(input) > maxInputSize {
+		fmt.Fprintf(os.Stderr, "error: input exceeds %d bytes\n", maxInputSize)
 		os.Exit(1)
 	}
 

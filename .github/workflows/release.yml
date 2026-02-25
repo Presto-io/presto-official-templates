@@ -37,7 +37,7 @@ jobs:
           echo "$CHANGED"
 
           # Shared files changed → rebuild all
-          if echo "$CHANGED" | grep -qE '^(go\.(mod|sum)|\.github/)'; then
+          if echo "$CHANGED" | grep -qE '^(go\.(mod|sum)|\.github/|internal/)'; then
             echo "Shared files changed, building all templates"
             echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
             exit 0
