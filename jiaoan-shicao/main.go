@@ -2,12 +2,10 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
-	"os"
 	"strings"
+
+	"github.com/Presto-io/presto-official-templates/internal/cli"
 )
 
 //go:embed manifest.json
@@ -17,40 +15,10 @@ var manifestJSON string
 var exampleMD string
 
 func main() {
-	manifestFlag := flag.Bool("manifest", false, "output manifest JSON")
-	exampleFlag := flag.Bool("example", false, "output example markdown")
-	versionFlag := flag.Bool("version", false, "output version")
-	flag.Parse()
-
-	if *versionFlag {
-		var m map[string]interface{}
-		if err := json.Unmarshal([]byte(manifestJSON), &m); err == nil {
-			if v, ok := m["version"]; ok {
-				fmt.Println(v)
-			}
-		}
-		return
-	}
-
-	if *manifestFlag {
-		fmt.Print(manifestJSON)
-		return
-	}
-
-	if *exampleFlag {
-		fmt.Print(exampleMD)
-		return
-	}
-
-	source, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
-		os.Exit(1)
-	}
-
-	sections := parseMarkdown(string(source))
-	typstOutput := generateTypst(sections)
-	fmt.Print(typstOutput)
+	cli.Run(manifestJSON, exampleMD, func(input string) string {
+		sections := parseMarkdown(input)
+		return generateTypst(sections)
+	})
 }
 
 const preamble = `// 中文字号转换函数
@@ -290,7 +258,7 @@ func generateTypst(sections []DocumentSection) string {
 					h4Counter++
 
 					// 为每列在输出时维护独立序号计数器（H4 内重置）
-					counterCol0, counterCol1, counterCol2 := 1, 1, 1
+					counters := [3]int{1, 1, 1}
 
 					// 输出每一行，依据 rowspans 决定是否输出或输出带 rowspan 的单元格
 					for i := 0; i < nRows; i++ {
@@ -308,19 +276,8 @@ func generateTypst(sections []DocumentSection) string {
 							}
 
 							content := cellContents[i][col]
-							// 三列学习类型内容（0..2）：按列编号，调用 formatNumberedContent
-							if col == 0 {
-								formatted, newc := formatNumberedContent(content, counterCol0)
-								counterCol0 = newc
-								content = formatted
-							} else if col == 1 {
-								formatted, newc := formatNumberedContent(content, counterCol1)
-								counterCol1 = newc
-								content = formatted
-							} else if col == 2 {
-								formatted, newc := formatNumberedContent(content, counterCol2)
-								counterCol2 = newc
-								content = formatted
+							if col <= 2 {
+								content, counters[col] = formatNumberedContent(content, counters[col])
 							} else if col == 3 {
 								// 教学方法列，替换换行为双换行
 								if strings.TrimSpace(content) != "" {
@@ -332,13 +289,13 @@ func generateTypst(sections []DocumentSection) string {
 							if rs > 1 {
 								var attrs []string
 								attrs = append(attrs, fmt.Sprintf("rowspan: %d", rs))
-								if col >= 0 && col <= 2 && strings.TrimSpace(content) != "" {
+								if col <= 2 && strings.TrimSpace(content) != "" {
 									attrs = append(attrs, "align: left")
 								}
 								sb.WriteString(fmt.Sprintf("  table.cell(%s)[%s],", strings.Join(attrs, ", "), content))
 							} else {
 								// rowspan == 1 时，不使用 table.cell，对齐通过 align() 包裹
-								if col >= 0 && col <= 2 && strings.TrimSpace(content) != "" {
+								if col <= 2 && strings.TrimSpace(content) != "" {
 									sb.WriteString(fmt.Sprintf("  align(left)[%s],", content))
 								} else {
 									sb.WriteString(fmt.Sprintf("  [%s],", content))
