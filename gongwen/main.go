@@ -2,18 +2,15 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"html"
-	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"github.com/Presto-io/presto-official-templates/internal/cli"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/parser"
@@ -111,14 +108,15 @@ func parseFrontMatter(input string) (frontMatter, string) {
 	return fm, body
 }
 
+var dateRe = regexp.MustCompile(`^(\d{4})-(\d{1,2})-(\d{1,2})$`)
+
 // formatDate converts "YYYY-MM-DD" to datetime(year: N, month: N, day: N),
 // otherwise returns a quoted string.
 func formatDate(date string) string {
 	if date == "" {
 		return `""`
 	}
-	re := regexp.MustCompile(`^(\d{4})-(\d{1,2})-(\d{1,2})$`)
-	m := re.FindStringSubmatch(date)
+	m := dateRe.FindStringSubmatch(date)
 	if m != nil {
 		// Strip leading zeros for month/day
 		year := m[1]
@@ -689,8 +687,8 @@ func (c *converter) renderListItem(item ast.Node) string {
 	return strings.Join(parts, "\n")
 }
 
-// renderHTMLBlock checks for noindent markers.
-func isNoindentStart(n ast.Node, source []byte) bool {
+// isHTMLComment checks if a node is an HTML block containing the given keyword.
+func isHTMLComment(n ast.Node, source []byte, keyword string) bool {
 	if n.Kind() != ast.KindHTMLBlock {
 		return false
 	}
@@ -699,21 +697,7 @@ func isNoindentStart(n ast.Node, source []byte) bool {
 		return false
 	}
 	seg := lines.At(0)
-	line := string(seg.Value(source))
-	return strings.Contains(line, "noindent-start")
-}
-
-func isNoindentEnd(n ast.Node, source []byte) bool {
-	if n.Kind() != ast.KindHTMLBlock {
-		return false
-	}
-	lines := n.Lines()
-	if lines.Len() == 0 {
-		return false
-	}
-	seg := lines.At(0)
-	line := string(seg.Value(source))
-	return strings.Contains(line, "noindent-end")
+	return strings.Contains(string(seg.Value(source)), keyword)
 }
 
 // renderDocument renders the full document body.
@@ -722,10 +706,10 @@ func (c *converter) renderDocument(doc ast.Node) string {
 	child := doc.FirstChild()
 
 	for child != nil {
-		if isNoindentStart(child, c.source) {
+		if isHTMLComment(child, c.source, "noindent-start") {
 			child = child.NextSibling()
 			var innerBuf strings.Builder
-			for child != nil && !isNoindentEnd(child, c.source) {
+			for child != nil && !isHTMLComment(child, c.source, "noindent-end") {
 				innerBuf.WriteString(c.renderBlock(child, true))
 				child = child.NextSibling()
 			}
@@ -833,23 +817,20 @@ func convert(fm frontMatter, body string) string {
 	var out strings.Builder
 
 	out.WriteString(templateHead)
-	out.WriteString(fmt.Sprintf("#let autoTitle = \"%s\"\n", fm.Title))
-	out.WriteString("\n")
-	out.WriteString(fmt.Sprintf("#let autoAuthor = \"%s\"\n", fm.Author))
-	out.WriteString("\n")
-	out.WriteString(fmt.Sprintf("#let autoDate = %s\n", formatDate(fm.Date)))
-	out.WriteString("\n")
+	fmt.Fprintf(&out, "#let autoTitle = \"%s\"\n\n", fm.Title)
+	fmt.Fprintf(&out, "#let autoAuthor = \"%s\"\n\n", fm.Author)
+	fmt.Fprintf(&out, "#let autoDate = %s\n\n", formatDate(fm.Date))
 
-	out.WriteString("#set document(\n")
-	out.WriteString("  title: autoTitle.replace(\"|\", \" \"),\n")
-	out.WriteString("  author: autoAuthor,\n")
-	out.WriteString("  keywords: \"工作总结, 年终报告\",\n")
-	out.WriteString("  date: auto,\n")
-	out.WriteString(")\n")
-	out.WriteString("\n")
+	out.WriteString(`#set document(
+  title: autoTitle.replace("|", " "),
+  author: autoAuthor,
+  keywords: "工作总结, 年终报告",
+  date: auto,
+)
 
-	out.WriteString("= #autoTitle.split(\"|\").map(s => s.trim()).join(linebreak())\n")
-	out.WriteString("\n")
+= #autoTitle.split("|").map(s => s.trim()).join(linebreak())
+
+`)
 
 	if !fm.Signature {
 		out.WriteString("#name(autoAuthor)\n")
@@ -859,14 +840,16 @@ func convert(fm frontMatter, body string) string {
 	out.WriteString(convertBody(body))
 
 	if fm.Signature {
-		out.WriteString("\n#v(18pt)\n")
-		out.WriteString("#align(right, block[\n")
-		out.WriteString("  #set align(center)\n")
-		out.WriteString("  #autoAuthor \\\n")
-		out.WriteString("  #autoDate.display(\n")
-		out.WriteString("    \"[year]年[month padding:none]月[day padding:none]日\",\n")
-		out.WriteString("  )\n")
-		out.WriteString("])\n")
+		out.WriteString(`
+#v(18pt)
+#align(right, block[
+  #set align(center)
+  #autoAuthor \
+  #autoDate.display(
+    "[year]年[month padding:none]月[day padding:none]日",
+  )
+])
+`)
 	}
 
 	return out.String()
@@ -875,38 +858,8 @@ func convert(fm frontMatter, body string) string {
 // ---------- CLI ----------
 
 func main() {
-	manifestFlag := flag.Bool("manifest", false, "output manifest JSON")
-	exampleFlag := flag.Bool("example", false, "output example markdown")
-	versionFlag := flag.Bool("version", false, "output version")
-	flag.Parse()
-
-	if *versionFlag {
-		var m map[string]interface{}
-		if err := json.Unmarshal([]byte(manifestJSON), &m); err == nil {
-			if v, ok := m["version"]; ok {
-				fmt.Println(v)
-			}
-		}
-		return
-	}
-
-	if *manifestFlag {
-		fmt.Print(manifestJSON)
-		return
-	}
-
-	if *exampleFlag {
-		fmt.Print(exampleMD)
-		return
-	}
-
-	input, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
-		os.Exit(1)
-	}
-
-	fm, body := parseFrontMatter(string(input))
-	result := convert(fm, body)
-	fmt.Print(result)
+	cli.Run(manifestJSON, exampleMD, func(input string) string {
+		fm, body := parseFrontMatter(input)
+		return convert(fm, body)
+	})
 }
