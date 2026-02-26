@@ -1,6 +1,7 @@
 # Presto Official Templates
 
-请阅读并遵循 [CONVENTIONS.md](https://github.com/Presto-io/Presto-Homepage/blob/main/docs/CONVENTIONS.md)（中心文档）。
+> 组织级规则见 `../Presto-homepage/docs/ai-guide.md`
+> 模板开发规范见 `../Presto-homepage/docs/CONVENTIONS.md`
 
 ## 仓库结构
 
@@ -27,7 +28,6 @@ presto-official-templates/
 - 不要修改模板二进制协议（stdin/stdout 接口）
 - 不要引入新的第三方 Go 依赖（只用 goldmark + yaml.v3 + 标准库）
 - 禁止 import `net`、`net/*`、`os/exec`、`plugin`、`debug/*`（安全规范）
-- Commit 消息用中文，格式 `<type>: <描述>`
 - 每个模板是独立的 main package，在自己的子目录下
 - `go.mod` 放在仓库根目录，构建时需要 `cd` 进子目录
 
