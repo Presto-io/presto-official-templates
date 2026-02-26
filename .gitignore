@@ -1,2 +1,5 @@
 presto-template-*
 .DS_Store
+
+# Claude Code
+.claude/
