@@ -62,7 +62,7 @@ jobs:
 
   build:
     needs: changes
-    runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         template: ${{ fromJson(needs.changes.outputs.templates) }}
@@ -77,6 +77,7 @@ jobs:
       - name: Build
         shell: bash
         env:
+          CGO_ENABLED: '0'
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
         run: |
