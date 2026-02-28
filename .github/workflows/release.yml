@@ -4,16 +4,17 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   changes:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     outputs:
       templates: ${{ steps.detect.outputs.templates }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -61,6 +62,8 @@ jobs:
           fi
 
   build:
+    permissions:
+      contents: write
     needs: changes
     runs-on: ubuntu-latest
     strategy:
@@ -69,8 +72,8 @@ jobs:
         os: [darwin, linux, windows]
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
@@ -86,23 +89,25 @@ jobs:
           if [ "${{ matrix.os }}" = "windows" ]; then EXT=".exe"; fi
           go build -trimpath -ldflags="-s -w" -o "../presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}
           path: presto-template-*
 
   release:
+    permissions:
+      contents: write
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           merge-multiple: true
 
       - name: Generate checksums
         run: sha256sum presto-template-* > SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           files: |
             presto-template-*
