@@ -14,6 +14,8 @@ import (
 	"github.com/Presto-io/presto-official-templates/internal/typst"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"gopkg.in/yaml.v3"
@@ -751,6 +753,8 @@ func (c *converter) renderBlock(n ast.Node, inNoindent bool) string {
 		return "#line(length: 100%)\n\n"
 	case ast.KindBlockquote:
 		return c.renderBlockquote(n)
+	case east.KindTable:
+		return c.renderTable(n)
 	case ast.KindHTMLBlock:
 		return ""
 	default:
@@ -799,12 +803,165 @@ func (c *converter) renderBlockquote(n ast.Node) string {
 	return buf.String()
 }
 
+// renderTable renders a GFM table to Typst table syntax.
+// Uses a three-line style (三线表) consistent with GB/T 9704 document standards.
+func (c *converter) renderTable(n ast.Node) string {
+	var rows [][]cellInfo
+	var colAligns []east.Alignment
+
+	// Collect all rows and cells
+	for row := n.FirstChild(); row != nil; row = row.NextSibling() {
+		var cells []cellInfo
+		var isHeader bool
+
+		switch row.Kind() {
+		case east.KindTableHeader:
+			isHeader = true
+			cells = c.collectTableCells(row)
+		case east.KindTableRow:
+			tr := row.(*east.TableRow)
+			if len(colAligns) == 0 {
+				colAligns = tr.Alignments
+			}
+			isHeader = false
+			cells = c.collectTableCells(row)
+		default:
+			continue
+		}
+
+		if len(cells) > 0 {
+			for i := range cells {
+				cells[i].isHeader = isHeader
+			}
+			rows = append(rows, cells)
+		}
+	}
+
+	if len(rows) == 0 {
+		return ""
+	}
+
+	// Determine column count (max across all rows)
+	maxCols := 0
+	for _, row := range rows {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+
+	// Count total rows
+	totalRows := len(rows)
+
+	// Build Typst table using table.hline for three-line style
+	var buf strings.Builder
+	buf.WriteString("#align(center)[\n")
+	buf.WriteString("#table(\n")
+
+	// Columns: auto width to fit content (minimizes row count)
+	buf.WriteString("  columns: (")
+	for i := 0; i < maxCols; i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString("auto")
+	}
+	buf.WriteString("),\n")
+
+	// Alignment per column
+	buf.WriteString("  align: (")
+	for i := 0; i < maxCols; i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		align := alignLeft
+		if i < len(colAligns) {
+			align = typstAlign(colAligns[i])
+		}
+		buf.WriteString(string(align))
+	}
+	buf.WriteString("),\n")
+
+	// No default strokes
+	buf.WriteString("  stroke: none,\n")
+
+	// Top line (before row 0)
+	buf.WriteString("  table.hline(y: 0, stroke: 0.75pt),\n")
+
+	// Header bottom line (after row 0 = before row 1)
+	buf.WriteString("  table.hline(y: 1, stroke: 0.5pt),\n")
+
+	// Bottom line (after last row = before row totalRows)
+	buf.WriteString("  table.hline(y: " + strconv.Itoa(totalRows) + ", stroke: 0.75pt),\n")
+
+	// Header row (bold)
+	if len(rows) > 0 {
+		for _, cell := range rows[0] {
+			buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+		}
+	}
+
+	// Body rows
+	for rowIdx := 1; rowIdx < len(rows); rowIdx++ {
+		row := rows[rowIdx]
+		for _, cell := range row {
+			buf.WriteString("  [" + strings.TrimRight(cell.content, "\n") + "],\n")
+		}
+	}
+
+	buf.WriteString(")\n")
+	buf.WriteString("]\n\n")
+
+	return buf.String()
+}
+
+// collectTableCells extracts cell content from a TableRow or TableHeader node.
+func (c *converter) collectTableCells(row ast.Node) []cellInfo {
+	var cells []cellInfo
+	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if cell.Kind() != east.KindTableCell {
+			continue
+		}
+		content := c.renderInlines(cell)
+		cells = append(cells, cellInfo{
+			content: content,
+		})
+	}
+	return cells
+}
+
+type cellInfo struct {
+	content  string
+	isHeader bool
+}
+
+type cellAlignment string
+
+const (
+	alignLeft   cellAlignment = "left"
+	alignCenter cellAlignment = "center"
+	alignRight  cellAlignment = "right"
+)
+
+func typstAlign(a east.Alignment) cellAlignment {
+	switch a {
+	case east.AlignLeft:
+		return alignLeft
+	case east.AlignRight:
+		return alignRight
+	case east.AlignCenter:
+		return alignCenter
+	default:
+		return alignLeft
+	}
+}
+
 // convertBody parses markdown body and renders to Typst.
 func convertBody(body string) string {
 	body = preprocessBody(body)
 	source := []byte(body)
 
 	md := goldmark.New(
+		goldmark.WithExtensions(extension.Table),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
 		),
