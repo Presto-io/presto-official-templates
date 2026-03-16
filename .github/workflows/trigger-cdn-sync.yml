@@ -1,0 +1,19 @@
+name: Trigger CDN Sync
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  trigger-cdn-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger registry-deploy workflow
+        env:
+          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+        run: |
+          gh api repos/Presto-io/registry-deploy/dispatches \
+            -f event_type=release-published \
+            -f client_payload[version]="${{ github.event.release.tag_name }}"
+
+          echo "✅ Triggered CDN sync for ${{ github.event.release.tag_name }}"
