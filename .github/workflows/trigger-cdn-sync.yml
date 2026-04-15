@@ -3,6 +3,12 @@ name: Trigger Registry Refresh And CDN Sync
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to sync (e.g. v1.1.1)'
+        required: true
+        type: string
 
 jobs:
   refresh-registry-and-sync-cdn:
@@ -11,8 +17,8 @@ jobs:
       - name: Refresh template-registry
         env:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.version }}
         run: |
-          RELEASE_TAG="${{ github.event.release.tag_name }}"
           WORKFLOW_FILE="update-registry.yml"
           TARGET_REPO="Presto-io/template-registry"
           START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -54,9 +60,8 @@ jobs:
       - name: Trigger registry-deploy workflow
         env:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.version }}
         run: |
-          RELEASE_TAG="${{ github.event.release.tag_name }}"
-
           gh api repos/Presto-io/registry-deploy/dispatches \
             -f event_type=release-published \
             -f client_payload[version]="${RELEASE_TAG}"

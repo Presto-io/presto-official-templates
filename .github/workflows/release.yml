@@ -113,3 +113,19 @@ jobs:
             presto-template-*
             SHA256SUMS
           generate_release_notes: true
+
+  refresh-registry-and-sync-cdn:
+    permissions:
+      actions: write
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger registry refresh workflow
+        env:
+          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+        run: |
+          gh workflow run trigger-cdn-sync.yml \
+            -R Presto-io/presto-official-templates \
+            -f version="${{ github.ref_name }}"
+
+          echo "✅ Triggered registry refresh workflow for ${{ github.ref_name }}"
