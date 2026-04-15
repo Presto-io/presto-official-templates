@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/Presto-io/presto-official-templates/internal/cli"
 	"github.com/Presto-io/presto-official-templates/internal/typst"
@@ -76,7 +77,24 @@ type Table struct {
 // DocumentSection 存储一个二级标题定义的内容区域
 type DocumentSection struct {
 	H2Title string
-	Tables  []Table
+	Items   []SectionItem
+}
+
+// SectionItem 表示二级标题下的一项内容，可以是表格或分页符。
+type SectionItem struct {
+	Table     *Table
+	PageBreak *PageBreak
+}
+
+// PageBreak 表示显式分页。
+type PageBreak struct {
+	Weak bool
+}
+
+type tableContinuation struct {
+	H3Part1 string
+	H3Part2 string
+	H4Title string
 }
 
 // parseMarkdown 将 markdown 字符串解析为 DocumentSection 结构体切片
@@ -87,15 +105,39 @@ func parseMarkdown(content string) []DocumentSection {
 	var currentTable *Table
 	var currentH4 *H4Block
 	var currentH5 *H5Block
+	var continuation *tableContinuation
 
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r") // 兼容 Windows 换行符
+		if pageBreak, ok := parsePageBreakMarker(line); ok {
+			if currentSection == nil {
+				continue
+			}
+			if currentTable != nil {
+				continuation = &tableContinuation{
+					H3Part1: currentTable.H3Part1,
+					H3Part2: currentTable.H3Part2,
+				}
+				if currentH4 != nil {
+					continuation.H4Title = currentH4.Title
+				}
+			} else {
+				continuation = nil
+			}
+			currentSection.Items = append(currentSection.Items, SectionItem{PageBreak: &pageBreak})
+			currentTable = nil
+			currentH4 = nil
+			currentH5 = nil
+			continue
+		}
+
 		if strings.HasPrefix(line, "## ") {
 			sections = append(sections, DocumentSection{H2Title: strings.TrimSpace(line[3:])})
 			currentSection = &sections[len(sections)-1]
 			currentTable = nil
 			currentH4 = nil
 			currentH5 = nil
+			continuation = nil
 		} else if strings.HasPrefix(line, "### ") {
 			if currentSection == nil {
 				continue
@@ -118,11 +160,19 @@ func parseMarkdown(content string) []DocumentSection {
 				parts = []string{title, ""}
 			}
 
-			currentSection.Tables = append(currentSection.Tables, Table{H3Part1: strings.TrimSpace(parts[0]), H3Part2: strings.TrimSpace(parts[1])})
-			currentTable = &currentSection.Tables[len(currentSection.Tables)-1]
+			currentTable = &Table{H3Part1: strings.TrimSpace(parts[0]), H3Part2: strings.TrimSpace(parts[1])}
+			currentSection.Items = append(currentSection.Items, SectionItem{Table: currentTable})
 			currentH4 = nil
 			currentH5 = nil
+			continuation = nil
 		} else if strings.HasPrefix(line, "#### ") {
+			if currentSection == nil {
+				continue
+			}
+			if currentTable == nil && continuation != nil {
+				currentTable, currentH4 = startContinuationTable(currentSection, continuation, false)
+				continuation = nil
+			}
 			if currentTable == nil {
 				continue
 			}
@@ -131,6 +181,13 @@ func parseMarkdown(content string) []DocumentSection {
 			currentH4 = &currentTable.H4Blocks[len(currentTable.H4Blocks)-1]
 			currentH5 = nil
 		} else if strings.HasPrefix(line, "##### ") {
+			if currentSection == nil {
+				continue
+			}
+			if currentTable == nil && continuation != nil {
+				currentTable, currentH4 = startContinuationTable(currentSection, continuation, true)
+				continuation = nil
+			}
 			if currentH4 == nil {
 				continue
 			}
@@ -168,10 +225,14 @@ func parseMarkdown(content string) []DocumentSection {
 
 	// Clean up trailing empty content block if any
 	for i := range sections {
-		for j := range sections[i].Tables {
-			for k := range sections[i].Tables[j].H4Blocks {
-				for l := range sections[i].Tables[j].H4Blocks[k].H5Blocks {
-					h5 := &sections[i].Tables[j].H4Blocks[k].H5Blocks[l]
+		for j := range sections[i].Items {
+			table := sections[i].Items[j].Table
+			if table == nil {
+				continue
+			}
+			for k := range table.H4Blocks {
+				for l := range table.H4Blocks[k].H5Blocks {
+					h5 := &table.H4Blocks[k].H5Blocks[l]
 					if len(h5.Content) > 0 && h5.Content[len(h5.Content)-1] == "" {
 						h5.Content = h5.Content[:len(h5.Content)-1]
 					}
@@ -191,120 +252,132 @@ func generateTypst(sections []DocumentSection) string {
 	for _, section := range sections {
 		sb.WriteString(fmt.Sprintf("\n== %s\n\n", typst.EscapeContent(section.H2Title)))
 
-		if len(section.Tables) > 0 {
+		for _, item := range section.Items {
+			if item.PageBreak != nil {
+				if item.PageBreak.Weak {
+					sb.WriteString("#pagebreak(weak: true)\n\n")
+				} else {
+					sb.WriteString("#pagebreak()\n\n")
+				}
+				continue
+			}
+
+			if item.Table == nil || len(item.Table.H4Blocks) == 0 {
+				continue
+			}
+
+			table := item.Table
 			sb.WriteString("#table(\n")
-			sb.WriteString("  columns: (2.3cm, 4.2cm, auto, auto, 2.2cm, 1.1cm),\n")
+			sb.WriteString(fmt.Sprintf("  columns: %s,\n", tableColumnSpec(*table)))
 			sb.WriteString("  stroke: 0.5pt,\n")
 			sb.WriteString("  align: center + horizon,\n")
 
-			for _, table := range section.Tables {
-				// 表格第一行
-				sb.WriteString(fmt.Sprintf("  [*学习环节*], [*%s*], [*学习单元*], table.cell(colspan: 3)[*%s*],\n", typst.EscapeContent(table.H3Part1), typst.EscapeContent(table.H3Part2)))
+			// 表格第一行
+			sb.WriteString(fmt.Sprintf("  [*学习环节*], [*%s*], [*学习单元*], table.cell(colspan: 3)[*%s*],\n", typst.EscapeContent(table.H3Part1), typst.EscapeContent(table.H3Part2)))
 
-				// 表格第二行
-				sb.WriteString("  [教学活动], [学习内容], [学生活动], [教师活动], [教学方法与手段], [课时分配],\n")
+			// 表格第二行
+			sb.WriteString("  [教学活动], [学习内容], [学生活动], [教师活动], [教学方法与手段], [课时分配],\n")
 
-				h4Counter := 1 // Reset for each table (H3)
+			h4Counter := 1 // Reset for each table (H3)
 
-				// 内容行
-				for _, h4 := range table.H4Blocks {
-					if len(h4.H5Blocks) == 0 {
-						continue
+			// 内容行
+			for _, h4 := range table.H4Blocks {
+				if len(h4.H5Blocks) == 0 {
+					continue
+				}
+				// 为当前 H4 构建单元格内容矩阵（每行 5 列：content0, content1, content2, teachingMethods, h5.Title）
+				nRows := len(h4.H5Blocks)
+				cols := 5
+				cellContents := make([][]string, nRows)
+				for i := 0; i < nRows; i++ {
+					h5 := h4.H5Blocks[i]
+					cellContents[i] = make([]string, cols)
+					cellContents[i][0] = typst.EscapeContent(getContentLine(h5.Content, 0))
+					cellContents[i][1] = typst.EscapeContent(getContentLine(h5.Content, 1))
+					cellContents[i][2] = typst.EscapeContent(getContentLine(h5.Content, 2))
+					cellContents[i][3] = typst.EscapeContent(getContentLine(h5.Content, 3)) // 教学方法，渲染时会替换换行
+					cellContents[i][4] = typst.EscapeContent(h5.Title)
+				}
+
+				// 初始化 rowspan 矩阵，默认每个单元格 rowspan = 1
+				rowspans := make([][]int, nRows)
+				for i := 0; i < nRows; i++ {
+					rowspans[i] = make([]int, cols)
+					for j := 0; j < cols; j++ {
+						rowspans[i][j] = 1
 					}
-					// 为当前 H4 构建单元格内容矩阵（每行 5 列：content0, content1, content2, teachingMethods, h5.Title）
-					nRows := len(h4.H5Blocks)
-					cols := 5
-					cellContents := make([][]string, nRows)
+				}
+
+				// 处理包含 "同上" 的单元格：与正上方起始单元格合并（递归合并链）
+				for col := 0; col < cols; col++ {
 					for i := 0; i < nRows; i++ {
-						h5 := h4.H5Blocks[i]
-						cellContents[i] = make([]string, cols)
-						cellContents[i][0] = typst.EscapeContent(getContentLine(h5.Content, 0))
-						cellContents[i][1] = typst.EscapeContent(getContentLine(h5.Content, 1))
-						cellContents[i][2] = typst.EscapeContent(getContentLine(h5.Content, 2))
-						cellContents[i][3] = typst.EscapeContent(getContentLine(h5.Content, 3)) // 教学方法，渲染时会替换换行
-						cellContents[i][4] = typst.EscapeContent(h5.Title)
-					}
-
-					// 初始化 rowspan 矩阵，默认每个单元格 rowspan = 1
-					rowspans := make([][]int, nRows)
-					for i := 0; i < nRows; i++ {
-						rowspans[i] = make([]int, cols)
-						for j := 0; j < cols; j++ {
-							rowspans[i][j] = 1
-						}
-					}
-
-					// 处理包含 "同上" 的单元格：与正上方起始单元格合并（递归合并链）
-					for col := 0; col < cols; col++ {
-						for i := 0; i < nRows; i++ {
-							if strings.Contains(strings.TrimSpace(cellContents[i][col]), "同上") {
-								// 找到上方最近的起始单元格（rowspan != 0）
-								k := i - 1
-								for k >= 0 && rowspans[k][col] == 0 {
-									k--
-								}
-								if k >= 0 {
-									rowspans[k][col]++
-									rowspans[i][col] = 0 // 标记为已被合并，输出时跳过
-								} else {
-									// 若没有上方可合并的单元格（首行），保留为空字符串，不合并
-									cellContents[i][col] = ""
-									rowspans[i][col] = 1
-								}
+						if strings.Contains(strings.TrimSpace(cellContents[i][col]), "同上") {
+							// 找到上方最近的起始单元格（rowspan != 0）
+							k := i - 1
+							for k >= 0 && rowspans[k][col] == 0 {
+								k--
 							}
-						}
-					}
-
-					numberedH4Title := fmt.Sprintf("%d. %s", h4Counter, typst.EscapeContent(h4.Title))
-					h4Counter++
-
-					// 为每列在输出时维护独立序号计数器（H4 内重置）
-					counters := [3]int{1, 1, 1}
-
-					// 输出每一行，依据 rowspans 决定是否输出或输出带 rowspan 的单元格
-					for i := 0; i < nRows; i++ {
-						// 第一列（H4 标题）只在第一行输出，并带有整体 rowspan
-						if i == 0 {
-							sb.WriteString(fmt.Sprintf("  table.cell(rowspan: %d)[%s],", nRows, numberedH4Title))
-						}
-
-						// 对应三列内容 + 教学方法 + 课时分配
-						for col := 0; col < cols; col++ {
-							rs := rowspans[i][col]
-							if rs == 0 {
-								// 被上方合并，跳过输出该单元格
-								continue
-							}
-
-							content := cellContents[i][col]
-							if col <= 2 {
-								content, counters[col] = formatNumberedContent(content, counters[col])
-							} else if col == 3 {
-								// 教学方法列，替换换行为双换行
-								if strings.TrimSpace(content) != "" {
-									content = strings.ReplaceAll(content, "\n", "\n\n")
-								}
-							}
-
-							// 仅在 rowspan > 1 时使用 table.cell
-							if rs > 1 {
-								var attrs []string
-								attrs = append(attrs, fmt.Sprintf("rowspan: %d", rs))
-								if col <= 2 && strings.TrimSpace(content) != "" {
-									attrs = append(attrs, "align: left")
-								}
-								sb.WriteString(fmt.Sprintf("  table.cell(%s)[%s],", strings.Join(attrs, ", "), content))
+							if k >= 0 {
+								rowspans[k][col]++
+								rowspans[i][col] = 0 // 标记为已被合并，输出时跳过
 							} else {
-								// rowspan == 1 时，不使用 table.cell，对齐通过 align() 包裹
-								if col <= 2 && strings.TrimSpace(content) != "" {
-									sb.WriteString(fmt.Sprintf("  align(left)[%s],", content))
-								} else {
-									sb.WriteString(fmt.Sprintf("  [%s],", content))
-								}
+								// 若没有上方可合并的单元格（首行），保留为空字符串，不合并
+								cellContents[i][col] = ""
+								rowspans[i][col] = 1
 							}
 						}
-						sb.WriteString("\n")
 					}
+				}
+
+				numberedH4Title := fmt.Sprintf("%d. %s", h4Counter, typst.EscapeContent(h4.Title))
+				h4Counter++
+
+				// 为每列在输出时维护独立序号计数器（H4 内重置）
+				counters := [3]int{1, 1, 1}
+
+				// 输出每一行，依据 rowspans 决定是否输出或输出带 rowspan 的单元格
+				for i := 0; i < nRows; i++ {
+					// 第一列（H4 标题）只在第一行输出，并带有整体 rowspan
+					if i == 0 {
+						sb.WriteString(fmt.Sprintf("  table.cell(rowspan: %d)[%s],", nRows, numberedH4Title))
+					}
+
+					// 对应三列内容 + 教学方法 + 课时分配
+					for col := 0; col < cols; col++ {
+						rs := rowspans[i][col]
+						if rs == 0 {
+							// 被上方合并，跳过输出该单元格
+							continue
+						}
+
+						content := cellContents[i][col]
+						if col <= 2 {
+							content, counters[col] = formatNumberedContent(content, counters[col])
+						} else if col == 3 {
+							// 教学方法列，替换换行为双换行
+							if strings.TrimSpace(content) != "" {
+								content = strings.ReplaceAll(content, "\n", "\n\n")
+							}
+						}
+
+						// 仅在 rowspan > 1 时使用 table.cell
+						if rs > 1 {
+							var attrs []string
+							attrs = append(attrs, fmt.Sprintf("rowspan: %d", rs))
+							if col <= 3 && strings.TrimSpace(content) != "" {
+								attrs = append(attrs, "align: left")
+							}
+							sb.WriteString(fmt.Sprintf("  table.cell(%s)[%s],", strings.Join(attrs, ", "), content))
+						} else {
+							// rowspan == 1 时，不使用 table.cell，对齐通过 align() 包裹
+							if col <= 3 && strings.TrimSpace(content) != "" {
+								sb.WriteString(fmt.Sprintf("  align(left)[%s],", content))
+							} else {
+								sb.WriteString(fmt.Sprintf("  [%s],", content))
+							}
+						}
+					}
+					sb.WriteString("\n")
 				}
 			}
 			sb.WriteString(")\n")
@@ -336,4 +409,117 @@ func formatNumberedContent(content string, startCounter int) (string, int) {
 		}
 	}
 	return strings.Join(formattedLines, "\n"), counter
+}
+
+func parsePageBreakMarker(line string) (PageBreak, bool) {
+	switch strings.TrimSpace(line) {
+	case "{pagebreak}":
+		return PageBreak{}, true
+	case "{pagebreak:weak}":
+		return PageBreak{Weak: true}, true
+	default:
+		return PageBreak{}, false
+	}
+}
+
+func startContinuationTable(section *DocumentSection, continuation *tableContinuation, keepCurrentH4 bool) (*Table, *H4Block) {
+	if section == nil || continuation == nil {
+		return nil, nil
+	}
+
+	table := &Table{
+		H3Part1: continuation.H3Part1,
+		H3Part2: continuation.H3Part2,
+	}
+	section.Items = append(section.Items, SectionItem{Table: table})
+
+	if !keepCurrentH4 || continuation.H4Title == "" {
+		return table, nil
+	}
+
+	table.H4Blocks = append(table.H4Blocks, H4Block{Title: continuation.H4Title})
+	return table, &table.H4Blocks[len(table.H4Blocks)-1]
+}
+
+func tableColumnSpec(table Table) string {
+	metrics := []int{
+		displayWidth("学习环节"),
+		maxInt(displayWidth("学习内容"), displayWidth(table.H3Part1)),
+		maxInt(displayWidth("学生活动"), displayWidth("学习单元")),
+		displayWidth("教师活动"),
+		displayWidth("教学方法与手段"),
+		displayWidth("课时分配"),
+	}
+
+	for _, h4 := range table.H4Blocks {
+		metrics[0] = maxInt(metrics[0], displayWidth(h4.Title))
+		for _, h5 := range h4.H5Blocks {
+			metrics[1] = maxInt(metrics[1], displayWidth(getContentLine(h5.Content, 0)))
+			metrics[2] = maxInt(metrics[2], displayWidth(getContentLine(h5.Content, 1)))
+			metrics[3] = maxInt(metrics[3], displayWidth(getContentLine(h5.Content, 2)))
+			metrics[4] = maxInt(metrics[4], displayWidth(getContentLine(h5.Content, 3)))
+			metrics[5] = maxInt(metrics[5], displayWidth(h5.Title))
+		}
+	}
+
+	weights := []float64{
+		scaleColumnWeight(metrics[0], 7.5, 1.3, 1.9),
+		scaleColumnWeight(metrics[1], 8.5, 2.0, 3.4),
+		scaleColumnWeight(metrics[2], 8.0, 1.8, 3.0),
+		scaleColumnWeight(metrics[3], 8.0, 1.8, 3.0),
+		scaleColumnWeight(metrics[4], 10.0, 1.5, 2.3),
+		scaleColumnWeight(metrics[5], 8.0, 1.0, 1.3),
+	}
+
+	var parts []string
+	for _, weight := range weights {
+		parts = append(parts, fmt.Sprintf("%.2ffr", weight))
+	}
+
+	return fmt.Sprintf("(%s)", strings.Join(parts, ", "))
+}
+
+func scaleColumnWeight(metric int, divisor, minValue, maxValue float64) float64 {
+	return clampFloat(float64(metric)/divisor, minValue, maxValue)
+}
+
+func clampFloat(value, minValue, maxValue float64) float64 {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func displayWidth(s string) int {
+	maxWidth := 0
+	currentWidth := 0
+
+	for _, r := range s {
+		if r == '\n' {
+			maxWidth = maxInt(maxWidth, currentWidth)
+			currentWidth = 0
+			continue
+		}
+
+		switch {
+		case unicode.IsSpace(r):
+			currentWidth++
+		case r <= unicode.MaxASCII:
+			currentWidth++
+		default:
+			currentWidth += 2
+		}
+	}
+
+	return maxInt(maxWidth, currentWidth)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

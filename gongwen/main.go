@@ -212,6 +212,7 @@ func preprocessBody(body string) string {
 type converter struct {
 	source        []byte
 	figureCounter int
+	tableCounter  int
 	hasSeenHeader bool
 }
 
@@ -725,6 +726,21 @@ func (c *converter) renderDocument(doc ast.Node) string {
 			buf.WriteString("#block[#set par(first-line-indent: 0pt)\n#block[\n")
 			buf.WriteString(inner)
 			buf.WriteString("]\n]\n")
+		} else if child.Kind() == east.KindTable {
+			// Check for Pandoc-style table caption (": caption" after table)
+			caption := ""
+			next := child.NextSibling()
+			if next != nil && next.Kind() == ast.KindParagraph {
+				paraText := strings.TrimSpace(c.nodeText(next))
+				if strings.HasPrefix(paraText, ": ") {
+					caption = strings.TrimPrefix(paraText, ": ")
+					next = next.NextSibling() // Skip the caption paragraph
+				}
+			}
+
+			buf.WriteString(c.renderTableWithCaption(child, caption))
+
+			child = next
 		} else {
 			buf.WriteString(c.renderBlock(child, false))
 			child = child.NextSibling()
@@ -911,6 +927,24 @@ func (c *converter) renderTable(n ast.Node) string {
 	buf.WriteString(")\n")
 	buf.WriteString("]\n\n")
 
+	return buf.String()
+}
+
+// renderTableWithCaption renders a table with optional caption.
+// If caption is provided, adds "表N caption" above the table.
+func (c *converter) renderTableWithCaption(n ast.Node, caption string) string {
+	var buf strings.Builder
+
+	if caption != "" {
+		c.tableCounter++
+		// Add table caption above the table (公文格式：表N 标题，三号仿宋，与图注一致)
+		// Use #h(1em) for spacing to prevent Typst from collapsing spaces
+		buf.WriteString("#align(center)[\n")
+		buf.WriteString("  #text(size: zh(3), font: FONT_FS)[表" + strconv.Itoa(c.tableCounter) + "#h(1em)" + caption + "]\n")
+		buf.WriteString("]\n\n")
+	}
+
+	buf.WriteString(c.renderTable(n))
 	return buf.String()
 }
 
