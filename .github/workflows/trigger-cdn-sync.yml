@@ -1,19 +1,64 @@
-name: Trigger CDN Sync
+name: Trigger Registry Refresh And CDN Sync
 
 on:
   release:
     types: [published]
 
 jobs:
-  trigger-cdn-sync:
+  refresh-registry-and-sync-cdn:
     runs-on: ubuntu-latest
     steps:
+      - name: Refresh template-registry
+        env:
+          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          WORKFLOW_FILE="update-registry.yml"
+          TARGET_REPO="Presto-io/template-registry"
+          START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "🔄 Triggering ${TARGET_REPO}/${WORKFLOW_FILE} for ${RELEASE_TAG}"
+          gh workflow run "${WORKFLOW_FILE}" \
+            -R "${TARGET_REPO}" \
+            -f force_rebuild=true
+
+          RUN_ID=""
+          for attempt in $(seq 1 30); do
+            RUN_ID="$(gh run list \
+              -R "${TARGET_REPO}" \
+              --workflow "${WORKFLOW_FILE}" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,createdAt \
+              --jq ".[] | select(.createdAt >= \"${START_TIME}\") | .databaseId" \
+              | head -n 1)"
+
+            if [ -n "${RUN_ID}" ]; then
+              break
+            fi
+
+            echo "  waiting for template-registry workflow to appear (${attempt}/30)..."
+            sleep 10
+          done
+
+          if [ -z "${RUN_ID}" ]; then
+            echo "❌ Could not find the triggered template-registry workflow run"
+            exit 1
+          fi
+
+          echo "⏳ Waiting for template-registry run ${RUN_ID}"
+          gh run watch "${RUN_ID}" -R "${TARGET_REPO}" --exit-status
+
+          echo "✅ template-registry refreshed for ${RELEASE_TAG}"
+
       - name: Trigger registry-deploy workflow
         env:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
         run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+
           gh api repos/Presto-io/registry-deploy/dispatches \
             -f event_type=release-published \
-            -f client_payload[version]="${{ github.event.release.tag_name }}"
+            -f client_payload[version]="${RELEASE_TAG}"
 
-          echo "✅ Triggered CDN sync for ${{ github.event.release.tag_name }}"
+          echo "✅ Triggered CDN sync for ${RELEASE_TAG}"
