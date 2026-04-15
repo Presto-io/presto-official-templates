@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"strings"
 	"unicode"
 
@@ -50,10 +51,14 @@ const preamble = `// 中文字号转换函数
   cjk-latin-spacing: auto
 )
 
-#show heading.where(level: 2): it => {
-  align(center, par(leading: 40pt, text(font: FONT_SONG, size: zh(4), it.body)))
-}
+#let section-title(body) = block(above: 0pt, below: 0pt, width: 100%)[
+  #set text(font: FONT_SONG, size: zh(4))
+  #align(center)[#body]
+]
 `
+
+const tableTotalWidthCM = 25.04
+const sectionHeadingGap = "10pt"
 
 // H5Block 存储五级标题及其内容
 type H5Block struct {
@@ -249,8 +254,14 @@ func generateTypst(sections []DocumentSection) string {
 	var sb strings.Builder
 	sb.WriteString(preamble)
 
-	for _, section := range sections {
-		sb.WriteString(fmt.Sprintf("\n== %s\n\n", typst.EscapeContent(section.H2Title)))
+	for sectionIdx, section := range sections {
+		if sectionIdx > 0 {
+			sb.WriteString("\n#pagebreak()\n\n")
+		}
+		sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(section.H2Title), sectionHeadingGap))
+
+		chapterColumnSpecs := sectionColumnSpecs(section)
+		chapterIdx := 0
 
 		for _, item := range section.Items {
 			if item.PageBreak != nil {
@@ -259,6 +270,7 @@ func generateTypst(sections []DocumentSection) string {
 				} else {
 					sb.WriteString("#pagebreak()\n\n")
 				}
+				chapterIdx++
 				continue
 			}
 
@@ -267,16 +279,18 @@ func generateTypst(sections []DocumentSection) string {
 			}
 
 			table := item.Table
-			sb.WriteString("#table(\n")
-			sb.WriteString(fmt.Sprintf("  columns: %s,\n", tableColumnSpec(*table)))
-			sb.WriteString("  stroke: 0.5pt,\n")
-			sb.WriteString("  align: center + horizon,\n")
+			sb.WriteString("#block(above: 0pt, below: 0pt)[\n")
+			sb.WriteString("  #align(center)[\n")
+			sb.WriteString("    #table(\n")
+			sb.WriteString(fmt.Sprintf("      columns: %s,\n", chapterColumnSpecs[chapterIdx]))
+			sb.WriteString("      stroke: 0.5pt,\n")
+			sb.WriteString("      align: center + horizon,\n")
 
 			// 表格第一行
-			sb.WriteString(fmt.Sprintf("  [*学习环节*], [*%s*], [*学习单元*], table.cell(colspan: 3)[*%s*],\n", typst.EscapeContent(table.H3Part1), typst.EscapeContent(table.H3Part2)))
+			sb.WriteString(fmt.Sprintf("      [*学习环节*], [*%s*], [*学习单元*], table.cell(colspan: 3)[*%s*],\n", typst.EscapeContent(table.H3Part1), typst.EscapeContent(table.H3Part2)))
 
 			// 表格第二行
-			sb.WriteString("  [教学活动], [学习内容], [学生活动], [教师活动], [教学方法与手段], [课时分配],\n")
+			sb.WriteString("      [教学活动], [学习内容], [学生活动], [教师活动], [教学方法与手段], [课时分配],\n")
 
 			h4Counter := 1 // Reset for each table (H3)
 
@@ -329,7 +343,7 @@ func generateTypst(sections []DocumentSection) string {
 					}
 				}
 
-				numberedH4Title := fmt.Sprintf("%d. %s", h4Counter, typst.EscapeContent(h4.Title))
+				numberedH4Title := fmt.Sprintf("%d.%s", h4Counter, typst.EscapeContent(h4.Title))
 				h4Counter++
 
 				// 为每列在输出时维护独立序号计数器（H4 内重置）
@@ -339,7 +353,7 @@ func generateTypst(sections []DocumentSection) string {
 				for i := 0; i < nRows; i++ {
 					// 第一列（H4 标题）只在第一行输出，并带有整体 rowspan
 					if i == 0 {
-						sb.WriteString(fmt.Sprintf("  table.cell(rowspan: %d)[%s],", nRows, numberedH4Title))
+						sb.WriteString(fmt.Sprintf("      table.cell(rowspan: %d)[%s],", nRows, numberedH4Title))
 					}
 
 					// 对应三列内容 + 教学方法 + 课时分配
@@ -364,23 +378,25 @@ func generateTypst(sections []DocumentSection) string {
 						if rs > 1 {
 							var attrs []string
 							attrs = append(attrs, fmt.Sprintf("rowspan: %d", rs))
-							if col <= 3 && strings.TrimSpace(content) != "" {
-								attrs = append(attrs, "align: left")
+							if align := cellAlign(col, content); align != "" {
+								attrs = append(attrs, fmt.Sprintf("align: %s", align))
 							}
-							sb.WriteString(fmt.Sprintf("  table.cell(%s)[%s],", strings.Join(attrs, ", "), content))
+							sb.WriteString(fmt.Sprintf("      table.cell(%s)[%s],", strings.Join(attrs, ", "), content))
 						} else {
 							// rowspan == 1 时，不使用 table.cell，对齐通过 align() 包裹
-							if col <= 3 && strings.TrimSpace(content) != "" {
-								sb.WriteString(fmt.Sprintf("  align(left)[%s],", content))
+							if align := cellAlign(col, content); align != "" {
+								sb.WriteString(fmt.Sprintf("      align(%s)[%s],", align, content))
 							} else {
-								sb.WriteString(fmt.Sprintf("  [%s],", content))
+								sb.WriteString(fmt.Sprintf("      [%s],", content))
 							}
 						}
 					}
 					sb.WriteString("\n")
 				}
 			}
-			sb.WriteString(")\n")
+			sb.WriteString("    )\n")
+			sb.WriteString("  ]\n")
+			sb.WriteString("]\n")
 		}
 	}
 	return sb.String()
@@ -442,41 +458,117 @@ func startContinuationTable(section *DocumentSection, continuation *tableContinu
 }
 
 func tableColumnSpec(table Table) string {
-	metrics := []int{
-		displayWidth("学习环节"),
-		maxInt(displayWidth("学习内容"), displayWidth(table.H3Part1)),
-		maxInt(displayWidth("学生活动"), displayWidth("学习单元")),
+	widths := tableColumnWidthsCM([]Table{table})
+	var parts []string
+	for _, width := range widths {
+		parts = append(parts, fmt.Sprintf("%.2fcm", width))
+	}
+	return fmt.Sprintf("(%s)", strings.Join(parts, ", "))
+}
+
+func sectionColumnSpecs(section DocumentSection) []string {
+	var chapterTables []Table
+	specs := []string{}
+
+	flushChapter := func() {
+		if len(chapterTables) == 0 {
+			specs = append(specs, tableColumnSpec(Table{}))
+			return
+		}
+		specs = append(specs, tableColumnSpecForTables(chapterTables))
+	}
+
+	for _, item := range section.Items {
+		if item.PageBreak != nil {
+			flushChapter()
+			chapterTables = nil
+			continue
+		}
+		if item.Table != nil && len(item.Table.H4Blocks) > 0 {
+			chapterTables = append(chapterTables, *item.Table)
+		}
+	}
+
+	flushChapter()
+	return specs
+}
+
+func tableColumnSpecForTables(tables []Table) string {
+	widths := tableColumnWidthsCM(tables)
+	var parts []string
+	for _, width := range widths {
+		parts = append(parts, fmt.Sprintf("%.2fcm", width))
+	}
+	return fmt.Sprintf("(%s)", strings.Join(parts, ", "))
+}
+
+func tableColumnWidthsCM(tables []Table) []float64 {
+	headerMetrics := []int{
+		displayWidth("教学活动"),
+		displayWidth("学习内容"),
+		displayWidth("学生活动"),
 		displayWidth("教师活动"),
 		displayWidth("教学方法与手段"),
 		displayWidth("课时分配"),
 	}
+	metrics := make([]int, len(headerMetrics))
+	copy(metrics, headerMetrics)
 
-	for _, h4 := range table.H4Blocks {
-		metrics[0] = maxInt(metrics[0], displayWidth(h4.Title))
-		for _, h5 := range h4.H5Blocks {
-			metrics[1] = maxInt(metrics[1], displayWidth(getContentLine(h5.Content, 0)))
-			metrics[2] = maxInt(metrics[2], displayWidth(getContentLine(h5.Content, 1)))
-			metrics[3] = maxInt(metrics[3], displayWidth(getContentLine(h5.Content, 2)))
-			metrics[4] = maxInt(metrics[4], displayWidth(getContentLine(h5.Content, 3)))
-			metrics[5] = maxInt(metrics[5], displayWidth(h5.Title))
+	for _, table := range tables {
+		metrics[0] = maxInt(metrics[0], displayWidth("学习环节"))
+		metrics[1] = maxInt(metrics[1], displayWidth(table.H3Part1))
+		metrics[2] = maxInt(metrics[2], displayWidth("学习单元"))
+
+		for _, h4 := range table.H4Blocks {
+			metrics[0] = maxInt(metrics[0], displayWidth(h4.Title))
+			for _, h5 := range h4.H5Blocks {
+				metrics[1] = maxInt(metrics[1], displayWidth(getContentLine(h5.Content, 0)))
+				metrics[2] = maxInt(metrics[2], displayWidth(getContentLine(h5.Content, 1)))
+				metrics[3] = maxInt(metrics[3], displayWidth(getContentLine(h5.Content, 2)))
+				metrics[4] = maxInt(metrics[4], displayWidth(getContentLine(h5.Content, 3)))
+				metrics[5] = maxInt(metrics[5], displayWidth(h5.Title))
+			}
 		}
 	}
 
-	weights := []float64{
-		scaleColumnWeight(metrics[0], 7.5, 1.3, 1.9),
-		scaleColumnWeight(metrics[1], 8.5, 2.0, 3.4),
-		scaleColumnWeight(metrics[2], 8.0, 1.8, 3.0),
-		scaleColumnWeight(metrics[3], 8.0, 1.8, 3.0),
-		scaleColumnWeight(metrics[4], 10.0, 1.5, 2.3),
-		scaleColumnWeight(metrics[5], 8.0, 1.0, 1.3),
+	widths := []float64{
+		headerMinWidthCM(maxInt(headerMetrics[0], displayWidth("学习环节")), 0.10),
+		headerMinWidthCM(headerMetrics[1], 0.10),
+		headerMinWidthCM(headerMetrics[2], 0.10),
+		headerMinWidthCM(headerMetrics[3], 0.10),
+		headerMinWidthCM(headerMetrics[4], 0.14),
+		headerMinWidthCM(headerMetrics[5], 0.10),
 	}
 
-	var parts []string
-	for _, weight := range weights {
-		parts = append(parts, fmt.Sprintf("%.2ffr", weight))
+	remainingWidth := tableTotalWidthCM
+	for _, width := range widths {
+		remainingWidth -= width
 	}
 
-	return fmt.Sprintf("(%s)", strings.Join(parts, ", "))
+	if remainingWidth <= 0 {
+		return widths
+	}
+
+	pressures := columnPressures(tables)
+	baseWeights := []float64{0.5, 1.8, 1.6, 1.6, 0.18, 0.06}
+	pressureScales := []float64{0.22, 1.0, 0.95, 0.95, 0.18, 0.05}
+
+	totalWeight := 0.0
+	weights := make([]float64, len(widths))
+	for i := range widths {
+		weights[i] = baseWeights[i] + pressureScales[i]*math.Sqrt(pressures[i]+1)
+		totalWeight += weights[i]
+	}
+
+	if totalWeight == 0 {
+		return widths
+	}
+
+	for i := range widths {
+		widths[i] += remainingWidth * weights[i] / totalWeight
+	}
+
+	return widths
 }
 
 func scaleColumnWeight(metric int, divisor, minValue, maxValue float64) float64 {
@@ -522,4 +614,55 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func headerMinWidthCM(metric int, bias float64) float64 {
+	return float64(metric)*0.18 + 0.42 + bias
+}
+
+func columnPressures(tables []Table) []float64 {
+	pressures := []float64{1, 1, 1, 1, 0.5, 0.25}
+
+	for _, table := range tables {
+		pressures[0] += contentPressure(table.H3Part1) * 0.2
+		pressures[1] += contentPressure(table.H3Part2) * 0.15
+
+		for _, h4 := range table.H4Blocks {
+			pressures[0] += contentPressure(h4.Title) * 0.7
+			for _, h5 := range h4.H5Blocks {
+				pressures[1] += contentPressure(getContentLine(h5.Content, 0)) + 4
+				pressures[2] += contentPressure(getContentLine(h5.Content, 1)) + 4
+				pressures[3] += contentPressure(getContentLine(h5.Content, 2)) + 4
+				pressures[4] += contentPressure(getContentLine(h5.Content, 3)) * 0.45
+				pressures[5] += contentPressure(h5.Title) * 0.25
+			}
+		}
+	}
+
+	return pressures
+}
+
+func contentPressure(s string) float64 {
+	if strings.TrimSpace(s) == "" {
+		return 0
+	}
+
+	total := 0.0
+	for _, line := range strings.Split(s, "\n") {
+		total += float64(displayWidth(line))
+	}
+	return total
+}
+
+func cellAlign(col int, content string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	if col <= 2 {
+		return "left"
+	}
+	if col == 3 {
+		return "center + horizon"
+	}
+	return ""
 }
