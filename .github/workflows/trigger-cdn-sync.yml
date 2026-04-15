@@ -19,21 +19,22 @@ jobs:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.version }}
         run: |
-          WORKFLOW_FILE="update-registry.yml"
           TARGET_REPO="Presto-io/template-registry"
           START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          EVENT_TYPE="official-release-published"
 
-          echo "🔄 Triggering ${TARGET_REPO}/${WORKFLOW_FILE} for ${RELEASE_TAG}"
-          gh workflow run "${WORKFLOW_FILE}" \
-            -R "${TARGET_REPO}" \
-            -f force_rebuild=true
+          echo "🔄 Triggering ${TARGET_REPO} repository_dispatch for ${RELEASE_TAG}"
+          gh api "repos/${TARGET_REPO}/dispatches" \
+            -f event_type="${EVENT_TYPE}" \
+            -f client_payload[force_rebuild]=true \
+            -f client_payload[version]="${RELEASE_TAG}"
 
           RUN_ID=""
           for attempt in $(seq 1 30); do
             RUN_ID="$(gh run list \
               -R "${TARGET_REPO}" \
-              --workflow "${WORKFLOW_FILE}" \
-              --event workflow_dispatch \
+              --workflow "update-registry.yml" \
+              --event repository_dispatch \
               --limit 20 \
               --json databaseId,createdAt \
               --jq ".[] | select(.createdAt >= \"${START_TIME}\") | .databaseId" \
