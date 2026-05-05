@@ -50,15 +50,6 @@ The SignPath trusted-build policy file is `.signpath/policies/presto-io/release-
 
 Phase 28's signing request must use GitHub workflow artifact IDs rather than locally produced files. This keeps public trusted signing tied to GitHub Actions origin metadata, protected release/tag workflow execution, and the artifacts produced by the official template build matrix.
 
-## Self-signed dev/UAT lane
-
-The local self-signed lane is `dev/UAT only`. It proves the technical Authenticode flow, trust-root installation, signing, verification, and trust-root cleanup on Windows, but self-signed output cannot be used for public official/verified releases.
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\sign-windows-dev.ps1 -InputPath .\presto-template-gongwen-windows-amd64.exe -InstallTrustRoot
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\sign-windows-dev.ps1 -RemoveTrustRoot
-```
-
 ## Downstream phase contracts
 
 ### Phase 28 release workflow
