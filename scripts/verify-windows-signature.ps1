@@ -19,7 +19,15 @@ if (-not ($isDesktopWindowsPowerShell -or $isWindowsVariable)) {
 $signtool = Get-Command signtool -ErrorAction SilentlyContinue
 $signtoolCommandText = 'signtool verify /pa /tw'
 
+if (-not $InputPath -or $InputPath.Count -eq 0) {
+  throw 'At least one -InputPath .exe file is required for signature verification.'
+}
+
 foreach ($path in $InputPath) {
+  if ([string]::IsNullOrWhiteSpace($path)) {
+    throw 'InputPath contains an empty path.'
+  }
+
   $resolved = Resolve-Path -LiteralPath $path -ErrorAction Stop
   if ([System.IO.Path]::GetExtension($resolved.Path) -ne '.exe') {
     throw "InputPath must be a Windows .exe file: $path"
