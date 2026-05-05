@@ -26,8 +26,8 @@ jobs:
           echo "🔄 Triggering ${TARGET_REPO} repository_dispatch for ${RELEASE_TAG}"
           gh api "repos/${TARGET_REPO}/dispatches" \
             -f event_type="${EVENT_TYPE}" \
-            -f client_payload[force_rebuild]=true \
-            -f client_payload[version]="${RELEASE_TAG}"
+            -f "client_payload[force_rebuild]=true" \
+            -f "client_payload[version]=${RELEASE_TAG}"
 
           RUN_ID=""
           for attempt in $(seq 1 30); do
@@ -37,7 +37,8 @@ jobs:
               --event repository_dispatch \
               --limit 20 \
               --json databaseId,createdAt \
-              --jq ".[] | select(.createdAt >= \"${START_TIME}\") | .databaseId" \
+              --jq '.[] | "\(.databaseId)\t\(.createdAt)"' \
+              | awk -v start="${START_TIME}" '$2 >= start { print $1; exit }' \
               | head -n 1)"
 
             if [ -n "${RUN_ID}" ]; then
@@ -65,6 +66,6 @@ jobs:
         run: |
           gh api repos/Presto-io/registry-deploy/dispatches \
             -f event_type=release-published \
-            -f client_payload[version]="${RELEASE_TAG}"
+            -f "client_payload[version]=${RELEASE_TAG}"
 
           echo "✅ Triggered CDN sync for ${RELEASE_TAG}"

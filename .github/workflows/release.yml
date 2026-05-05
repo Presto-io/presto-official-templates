@@ -115,17 +115,61 @@ jobs:
           generate_release_notes: true
 
   refresh-registry-and-sync-cdn:
-    permissions:
-      actions: write
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger registry refresh workflow
+      - name: Refresh template-registry
         env:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh workflow run trigger-cdn-sync.yml \
-            -R Presto-io/presto-official-templates \
-            -f version="${{ github.ref_name }}"
+          TARGET_REPO="Presto-io/template-registry"
+          START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          EVENT_TYPE="official-release-published"
 
-          echo "✅ Triggered registry refresh workflow for ${{ github.ref_name }}"
+          echo "🔄 Triggering ${TARGET_REPO} repository_dispatch for ${RELEASE_TAG}"
+          gh api "repos/${TARGET_REPO}/dispatches" \
+            -f event_type="${EVENT_TYPE}" \
+            -f "client_payload[force_rebuild]=true" \
+            -f "client_payload[version]=${RELEASE_TAG}"
+
+          RUN_ID=""
+          for attempt in $(seq 1 30); do
+            RUN_ID="$(gh run list \
+              -R "${TARGET_REPO}" \
+              --workflow "update-registry.yml" \
+              --event repository_dispatch \
+              --limit 20 \
+              --json databaseId,createdAt \
+              --jq '.[] | "\(.databaseId)\t\(.createdAt)"' \
+              | awk -v start="${START_TIME}" '$2 >= start { print $1; exit }' \
+              | head -n 1)"
+
+            if [ -n "${RUN_ID}" ]; then
+              break
+            fi
+
+            echo "  waiting for template-registry workflow to appear (${attempt}/30)..."
+            sleep 10
+          done
+
+          if [ -z "${RUN_ID}" ]; then
+            echo "❌ Could not find the triggered template-registry workflow run"
+            exit 1
+          fi
+
+          echo "⏳ Waiting for template-registry run ${RUN_ID}"
+          gh run watch "${RUN_ID}" -R "${TARGET_REPO}" --exit-status
+
+          echo "✅ template-registry refreshed for ${RELEASE_TAG}"
+
+      - name: Trigger registry-deploy workflow
+        env:
+          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh api repos/Presto-io/registry-deploy/dispatches \
+            -f event_type=release-published \
+            -f "client_payload[version]=${RELEASE_TAG}"
+
+          echo "✅ Triggered CDN sync for ${RELEASE_TAG}"
