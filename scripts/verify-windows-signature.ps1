@@ -2,8 +2,7 @@
 param(
   [Parameter(Mandatory = $true)]
   [string[]] $InputPath,
-  [string[]] $ExpectedPublisher = @('CN=Presto-io Dev UAT Code Signing'),
-  [string[]] $ExpectedPublisherThumbprint = @(),
+  [string] $ExpectedPublisher = 'CN=Presto-io Dev UAT Code Signing',
   [switch] $RequireTimestamp
 )
 
@@ -35,13 +34,8 @@ foreach ($path in $InputPath) {
   }
 
   $signerSubject = $signature.SignerCertificate.Subject
-  if ($ExpectedPublisher.Count -gt 0 -and ($ExpectedPublisher -notcontains $signerSubject)) {
-    throw "Publisher mismatch: $($resolved.Path) signer='$signerSubject' expected='$($ExpectedPublisher -join ', ')'"
-  }
-
-  $signerThumbprint = $signature.SignerCertificate.Thumbprint
-  if ($ExpectedPublisherThumbprint.Count -gt 0 -and ($ExpectedPublisherThumbprint -notcontains $signerThumbprint)) {
-    throw "Publisher certificate mismatch: $($resolved.Path) thumbprint='$signerThumbprint'"
+  if ($signerSubject -notlike "*$ExpectedPublisher*") {
+    throw "Publisher mismatch: $($resolved.Path) signer='$signerSubject' expected='$ExpectedPublisher'"
   }
 
   $timestampCertificate = $null

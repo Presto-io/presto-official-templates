@@ -48,15 +48,7 @@ build -> SignPath signing -> verify -> sha256sum
 
 The SignPath trusted-build policy file is `.signpath/policies/presto-io/release-signing.yml`.
 
-That YAML only covers trusted-build policy checks such as GitHub-hosted runners, rerun handling, and branch ruleset expectations. It is not the whole release-signing boundary by itself.
-
-Phase 28 must enforce these additional hard gates in the GitHub workflow and SignPath project settings:
-
-- GitHub workflow triggers are limited to protected `v*` release tags or the protected release workflow path.
-- PR, fork, `pull_request_target`, `workflow_dispatch`, ordinary branch, and local/manual requests must not submit public signing requests.
-- The SignPath project policy is bound to the exact `Presto-io/presto-official-templates` repository and approved release workflow origin.
-- The signing request uses the official build matrix's GitHub workflow artifact IDs rather than locally produced files.
-- Signed asset names match `presto-template-{name}-windows-amd64.exe` or `presto-template-{name}-windows-arm64.exe`.
+Phase 28's signing request must use GitHub workflow artifact IDs rather than locally produced files. This keeps public trusted signing tied to GitHub Actions origin metadata, protected release/tag workflow execution, and the artifacts produced by the official template build matrix.
 
 ## Self-signed dev/UAT lane
 
