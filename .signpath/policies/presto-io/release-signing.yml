@@ -1,0 +1,21 @@
+# Public trusted signing policy for Presto official Windows template release signing.
+# PRs, forks, ordinary branches, and local/manual commands must not request public SignPath signing.
+github-policies:
+  runners:
+    require_github_hosted: true
+  build:
+    disallow_reruns: true
+  branch_rulesets:
+    - condition:
+        rules:
+          - restrict_creations: true
+          - restrict_updates: true
+          - restrict_deletions: true
+          - block_force_pushes: true
+          - require_pull_request:
+              min_required_approvals: 1
+              require_code_owner_review: true
+              dismiss_stale_reviews_on_push: true
+              require_review_thread_resolution: true
+        allow_bypass_actors: false
+        enforced_from: EARLIEST
