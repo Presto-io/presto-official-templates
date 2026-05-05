@@ -27,10 +27,6 @@ make build NAME=gongwen
 make test
 ```
 
-## Code signing policy
-
-Windows `.exe` release assets follow the [Code signing policy](docs/windows-code-signing.md). Public trusted signing is limited to Presto-io controlled official Windows templates and future Presto-reviewed verified Windows templates.
-
 ### 安装到 Presto
 
 ```bash
