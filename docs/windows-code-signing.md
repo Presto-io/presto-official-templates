@@ -44,12 +44,6 @@ build -> SignPath signing -> verify -> sha256sum
 
 `SHA256SUMS`, registry `sha256`, and CDN mirrors must all be generated from the signed bytes.
 
-## SignPath GitHub trusted-build policy
-
-The SignPath trusted-build policy file is `.signpath/policies/presto-io/release-signing.yml`.
-
-Phase 28's signing request must use GitHub workflow artifact IDs rather than locally produced files. This keeps public trusted signing tied to GitHub Actions origin metadata, protected release/tag workflow execution, and the artifacts produced by the official template build matrix.
-
 ## Downstream phase contracts
 
 ### Phase 28 release workflow
