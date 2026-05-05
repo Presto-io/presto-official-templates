@@ -59,17 +59,6 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\sign-windows-dev.ps1 -In
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\sign-windows-dev.ps1 -RemoveTrustRoot
 ```
 
-## Authenticode verification gate
-
-Public release verification must use:
-
-```powershell
-Get-AuthenticodeSignature .\presto-template-gongwen-windows-amd64.exe
-signtool verify /pa /tw .\presto-template-gongwen-windows-amd64.exe
-```
-
-Authenticode status valid, certificate chain valid, timestamp present, and publisher identity stable are hard gates. Missing signatures, invalid chains, missing timestamps, or publisher drift must block official/verified Windows publication instead of being downgraded to warnings.
-
 ## Downstream phase contracts
 
 ### Phase 28 release workflow
