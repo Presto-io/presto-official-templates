@@ -378,6 +378,7 @@ func (c *converter) renderSingleImage(img *ast.Image) string {
 
     image("%s", width: new-x, height: new-y)
   },
+  placement: auto,
   caption: [%s],
 ) <fig-%d>
 `, escapedPath, escapedPath, escapedCaption, c.figureCounter)
@@ -533,6 +534,7 @@ func (c *converter) renderMultiImage(images []*ast.Image) string {
   if is_subfigure {
     figure(
       context { render-rows(rows) },
+      placement: auto,
       caption: [ #main_caption ]
     )
   } else {
@@ -706,9 +708,10 @@ func isHTMLComment(n ast.Node, source []byte, keyword string) bool {
 	return strings.Contains(string(seg.Value(source)), keyword)
 }
 
-// renderDocument renders the full document body.
-func (c *converter) renderDocument(doc ast.Node) string {
-	var buf strings.Builder
+// renderDocumentBlocks renders top-level document blocks while preserving
+// table captions and noindent regions that can consume multiple AST nodes.
+func (c *converter) renderDocumentBlocks(doc ast.Node) []string {
+	var blocks []string
 	child := doc.FirstChild()
 
 	for child != nil {
@@ -723,9 +726,7 @@ func (c *converter) renderDocument(doc ast.Node) string {
 				child = child.NextSibling()
 			}
 			inner := innerBuf.String()
-			buf.WriteString("#block[#set par(first-line-indent: 0pt)\n#block[\n")
-			buf.WriteString(inner)
-			buf.WriteString("]\n]\n")
+			blocks = append(blocks, "#block[#set par(first-line-indent: 0pt)\n#block[\n"+inner+"]\n]\n")
 		} else if child.Kind() == east.KindTable {
 			// Check for Pandoc-style table caption (": caption" after table)
 			caption := ""
@@ -738,16 +739,21 @@ func (c *converter) renderDocument(doc ast.Node) string {
 				}
 			}
 
-			buf.WriteString(c.renderTableWithCaption(child, caption))
+			blocks = append(blocks, c.renderTableWithCaption(child, caption))
 
 			child = next
 		} else {
-			buf.WriteString(c.renderBlock(child, false))
+			blocks = append(blocks, c.renderBlock(child, false))
 			child = child.NextSibling()
 		}
 	}
 
-	return buf.String()
+	return blocks
+}
+
+// renderDocument renders the full document body.
+func (c *converter) renderDocument(doc ast.Node) string {
+	return strings.Join(c.renderDocumentBlocks(doc), "")
 }
 
 // renderBlock renders a single block-level node.
@@ -822,6 +828,14 @@ func (c *converter) renderBlockquote(n ast.Node) string {
 // renderTable renders a GFM table to Typst table syntax.
 // Uses a three-line style (三线表) consistent with GB/T 9704 document standards.
 func (c *converter) renderTable(n ast.Node) string {
+	rows, colAligns := c.extractTable(n)
+	if len(rows) == 0 {
+		return ""
+	}
+	return c.renderTableSeries(rows, colAligns, "", 0)
+}
+
+func (c *converter) extractTable(n ast.Node) ([][]cellInfo, []east.Alignment) {
 	var rows [][]cellInfo
 	var colAligns []east.Alignment
 
@@ -853,10 +867,105 @@ func (c *converter) renderTable(n ast.Node) string {
 		}
 	}
 
-	if len(rows) == 0 {
-		return ""
+	return rows, colAligns
+}
+
+const tablePageLineBudget = 22
+const tableCaptionBottomGap = "((297mm - 37mm - 35mm) / 22 - zh(3))"
+
+func estimatedTableRowLines(row []cellInfo) int {
+	maxCellRunes := 0
+	for _, cell := range row {
+		cellRunes := len([]rune(strings.TrimSpace(cell.content)))
+		if cellRunes > maxCellRunes {
+			maxCellRunes = cellRunes
+		}
+	}
+	lines := (maxCellRunes + 21) / 22
+	if lines < 1 {
+		return 1
+	}
+	return lines
+}
+
+func estimatedTableLines(rows [][]cellInfo, hasCaption bool) int {
+	lines := 0
+	if hasCaption {
+		lines += 2
+	}
+	if len(rows) > 0 {
+		lines += 2
+	}
+	for _, row := range rows[1:] {
+		lines += estimatedTableRowLines(row)
+	}
+	return lines
+}
+
+func (c *converter) renderTableSeries(rows [][]cellInfo, colAligns []east.Alignment, caption string, captionNumber int) string {
+	if estimatedTableLines(rows, caption != "") <= tablePageLineBudget {
+		return c.renderTableBlock(rows, colAligns, caption, captionNumber, true, false)
 	}
 
+	return c.renderTableBlock(rows, colAligns, caption, captionNumber, false, caption != "")
+}
+
+func writeTableColumns(buf *strings.Builder, maxCols int) {
+	buf.WriteString("  columns: (")
+	for i := 0; i < maxCols; i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString("auto")
+	}
+	buf.WriteString("),\n")
+}
+
+func writeTableAlignments(buf *strings.Builder, maxCols int, colAligns []east.Alignment) {
+	buf.WriteString("  align: (")
+	for i := 0; i < maxCols; i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		align := alignLeft
+		if i < len(colAligns) {
+			align = typstAlign(colAligns[i])
+		}
+		buf.WriteString(string(align))
+	}
+	buf.WriteString("),\n")
+}
+
+func writeMeasuredTableWidth(buf *strings.Builder, rows [][]cellInfo, colAligns []east.Alignment, maxCols int, continuedCaptionText string) {
+	buf.WriteString("  let table-caption-width = calc.max(\n")
+	buf.WriteString("    measure(text(font: FONT_FS, size: zh(3))[" + continuedCaptionText + "]).width,\n")
+	buf.WriteString("    measure(table(\n")
+	writeTableColumns(buf, maxCols)
+	writeTableAlignments(buf, maxCols, colAligns)
+	buf.WriteString("      stroke: none,\n")
+	if len(rows) > 0 {
+		for _, cell := range rows[0] {
+			buf.WriteString("      [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+		}
+	}
+	for rowIdx := 1; rowIdx < len(rows); rowIdx++ {
+		for _, cell := range rows[rowIdx] {
+			buf.WriteString("      [" + strings.TrimRight(cell.content, "\n") + "],\n")
+		}
+	}
+	buf.WriteString("    )).width,\n")
+	buf.WriteString("  )\n")
+}
+
+func tableCaptionCellContent(captionText string) string {
+	return "box(width: table-caption-width)[#align(center)[#pad(bottom: " + tableCaptionBottomGap + ")[#text(font: FONT_FS, size: zh(3))[" + captionText + "]]]]"
+}
+
+func tableCaptionBlockContent(captionText string) string {
+	return "#align(center)[\n  #pad(bottom: " + tableCaptionBottomGap + ")[#text(size: zh(3), font: FONT_FS)[" + captionText + "]]\n]\n"
+}
+
+func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignment, caption string, captionNumber int, floating bool, repeatCaption bool) string {
 	// Determine column count (max across all rows)
 	maxCols := 0
 	for _, row := range rows {
@@ -870,50 +979,85 @@ func (c *converter) renderTable(n ast.Node) string {
 
 	// Build Typst table using table.hline for three-line style
 	var buf strings.Builder
-	buf.WriteString("#align(center)[\n")
-	buf.WriteString("#table(\n")
-
-	// Columns: auto width to fit content (minimizes row count)
-	buf.WriteString("  columns: (")
-	for i := 0; i < maxCols; i++ {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		buf.WriteString("auto")
+	if floating {
+		buf.WriteString("#place(auto, float: true)[\n")
+		buf.WriteString("#block(width: 100%)[\n")
 	}
-	buf.WriteString("),\n")
+
+	if caption != "" && !repeatCaption {
+		// Add table caption above the table (公文格式：表N 标题，三号仿宋，与图注一致)
+		// Use #h(1em) for spacing to prevent Typst from collapsing spaces.
+		// The bottom gap follows the 22-line page grid:
+		// (A4 height - top margin - bottom margin) / 22 - caption font size.
+		captionText := "表" + strconv.Itoa(captionNumber)
+		buf.WriteString("#block(sticky: true, width: 100%)[\n")
+		buf.WriteString(tableCaptionBlockContent(captionText + "#h(1em)" + caption))
+		buf.WriteString("]\n")
+	}
+
+	if repeatCaption {
+		captionText := "表" + strconv.Itoa(captionNumber)
+		continuedCaptionText := captionText
+		escapedCaption := typst.EscapeContent(caption)
+		if escapedCaption != "" {
+			captionText += "#h(1em)" + escapedCaption
+			continuedCaptionText += "#h(1em)" + escapedCaption + "（续）"
+		} else {
+			continuedCaptionText += "（续）"
+		}
+		buf.WriteString("#context {\n")
+		buf.WriteString("  let table-start-page = here().page()\n")
+		writeMeasuredTableWidth(&buf, rows, colAligns, maxCols, continuedCaptionText)
+		buf.WriteString("  align(center)[\n")
+		buf.WriteString("  #table(\n")
+	} else {
+		buf.WriteString("#align(center)[\n")
+		buf.WriteString("#table(\n")
+	}
+
+	// Keep columns auto-sized so tables stay close to their natural content
+	// width; continuation captions get their own minimum width below.
+	writeTableColumns(&buf, maxCols)
 
 	// Alignment per column
-	buf.WriteString("  align: (")
-	for i := 0; i < maxCols; i++ {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		align := alignLeft
-		if i < len(colAligns) {
-			align = typstAlign(colAligns[i])
-		}
-		buf.WriteString(string(align))
-	}
-	buf.WriteString("),\n")
+	writeTableAlignments(&buf, maxCols, colAligns)
 
 	// No default strokes
 	buf.WriteString("  stroke: none,\n")
 
-	// Top line (before row 0)
-	buf.WriteString("  table.hline(y: 0, stroke: 0.75pt),\n")
+	headerRows := 1
+	if repeatCaption {
+		headerRows = 2
+	}
+
+	// Top line (before the column header row; captions are above the line)
+	buf.WriteString("  table.hline(y: " + strconv.Itoa(headerRows-1) + ", stroke: 0.75pt),\n")
 
 	// Header bottom line (after row 0 = before row 1)
-	buf.WriteString("  table.hline(y: 1, stroke: 0.5pt),\n")
+	buf.WriteString("  table.hline(y: " + strconv.Itoa(headerRows) + ", stroke: 0.5pt),\n")
 
 	// Bottom line (after last row = before row totalRows)
-	buf.WriteString("  table.hline(y: " + strconv.Itoa(totalRows) + ", stroke: 0.75pt),\n")
+	buf.WriteString("  table.hline(y: " + strconv.Itoa(totalRows+headerRows-1) + ", stroke: 0.75pt),\n")
 
-	// Header row (bold)
+	// Header row (bold) and repeat it on continuation pages.
 	if len(rows) > 0 {
+		buf.WriteString("  table.header(repeat: true,\n")
+		if repeatCaption {
+			captionText := "表" + strconv.Itoa(captionNumber)
+			continuedCaptionText := captionText
+			escapedCaption := typst.EscapeContent(caption)
+			if escapedCaption != "" {
+				captionText += "#h(1em)" + escapedCaption
+				continuedCaptionText += "#h(1em)" + escapedCaption + "（续）"
+			} else {
+				continuedCaptionText += "（续）"
+			}
+			buf.WriteString("  table.cell(colspan: " + strconv.Itoa(maxCols) + ", align: center, stroke: none)[#context if here().page() == table-start-page { " + tableCaptionCellContent(captionText) + " } else { " + tableCaptionCellContent(continuedCaptionText) + " }],\n")
+		}
 		for _, cell := range rows[0] {
 			buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
 		}
+		buf.WriteString("  ),\n")
 	}
 
 	// Body rows
@@ -926,6 +1070,14 @@ func (c *converter) renderTable(n ast.Node) string {
 
 	buf.WriteString(")\n")
 	buf.WriteString("]\n\n")
+	if repeatCaption {
+		buf.WriteString("}\n\n")
+	}
+
+	if floating {
+		buf.WriteString("]\n")
+		buf.WriteString("]\n\n")
+	}
 
 	return buf.String()
 }
@@ -933,19 +1085,17 @@ func (c *converter) renderTable(n ast.Node) string {
 // renderTableWithCaption renders a table with optional caption.
 // If caption is provided, adds "表N caption" above the table.
 func (c *converter) renderTableWithCaption(n ast.Node, caption string) string {
-	var buf strings.Builder
-
+	rows, colAligns := c.extractTable(n)
+	if len(rows) == 0 {
+		return ""
+	}
+	captionNumber := 0
 	if caption != "" {
 		c.tableCounter++
-		// Add table caption above the table (公文格式：表N 标题，三号仿宋，与图注一致)
-		// Use #h(1em) for spacing to prevent Typst from collapsing spaces
-		buf.WriteString("#align(center)[\n")
-		buf.WriteString("  #text(size: zh(3), font: FONT_FS)[表" + strconv.Itoa(c.tableCounter) + "#h(1em)" + caption + "]\n")
-		buf.WriteString("]\n\n")
+		captionNumber = c.tableCounter
 	}
 
-	buf.WriteString(c.renderTable(n))
-	return buf.String()
+	return c.renderTableSeries(rows, colAligns, caption, captionNumber)
 }
 
 // collectTableCells extracts cell content from a TableRow or TableHeader node.
@@ -991,6 +1141,10 @@ func typstAlign(a east.Alignment) cellAlignment {
 
 // convertBody parses markdown body and renders to Typst.
 func convertBody(body string) string {
+	return strings.Join(convertBodyBlocks(body), "")
+}
+
+func convertBodyBlocks(body string) []string {
 	body = preprocessBody(body)
 	source := []byte(body)
 
@@ -1003,7 +1157,33 @@ func convertBody(body string) string {
 	doc := md.Parser().Parse(text.NewReader(source))
 
 	conv := &converter{source: source}
-	return conv.renderDocument(doc)
+	return conv.renderDocumentBlocks(doc)
+}
+
+func shouldStickSignatureToBlock(block string) bool {
+	trimmed := strings.TrimSpace(block)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "#pagebreak") || strings.Contains(trimmed, "#place(") || strings.Contains(trimmed, "#figure(") {
+		return false
+	}
+	if strings.Contains(trimmed, "#table(") && !strings.Contains(trimmed, "#block(breakable: false)") {
+		return false
+	}
+	return true
+}
+
+func renderSignatureBlock() string {
+	return `#v(18pt)
+#align(right, block[
+  #set align(center)
+  #autoAuthor \
+  #autoDate.display(
+    "[year]年[month padding:none]月[day padding:none]日",
+  )
+])
+`
 }
 
 // convert takes parsed front-matter and markdown body, returns full .typ output.
@@ -1031,19 +1211,24 @@ func convert(fm frontMatter, body string) string {
 	}
 	out.WriteString("\n")
 
-	out.WriteString(convertBody(body))
-
 	if fm.Signature {
-		out.WriteString(`
-#v(18pt)
-#align(right, block[
-  #set align(center)
-  #autoAuthor \
-  #autoDate.display(
-    "[year]年[month padding:none]月[day padding:none]日",
-  )
-])
-`)
+		blocks := convertBodyBlocks(body)
+		if len(blocks) > 0 && shouldStickSignatureToBlock(blocks[len(blocks)-1]) {
+			for _, block := range blocks[:len(blocks)-1] {
+				out.WriteString(block)
+			}
+			out.WriteString("#place.flush()\n")
+			out.WriteString("#block(sticky: true)[\n")
+			out.WriteString(blocks[len(blocks)-1])
+			out.WriteString(renderSignatureBlock())
+			out.WriteString("]\n")
+		} else {
+			out.WriteString(strings.Join(blocks, ""))
+			out.WriteString("#place.flush()\n")
+			out.WriteString(renderSignatureBlock())
+		}
+	} else {
+		out.WriteString(convertBody(body))
 	}
 
 	return out.String()
