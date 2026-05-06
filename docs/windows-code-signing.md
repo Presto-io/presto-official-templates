@@ -15,6 +15,7 @@ Presto-io does not use its publisher identity to sign arbitrary community execut
 - [ ] project scope: `Presto-io Windows template executables`
 - [ ] repository: `Presto-io/presto-official-templates`
 - [ ] license: `MIT`
+- [ ] privacy policy: `https://github.com/Presto-io/presto-official-templates/blob/main/docs/privacy-policy.md`
 - [ ] release workflow: `presto-official-templates/.github/workflows/release.yml`
 - [ ] signed objects: `presto-template-{name}-windows-amd64.exe` and `presto-template-{name}-windows-arm64.exe`
 - [ ] maintainers and responsibilities: committers/reviewers/approvers
@@ -36,13 +37,15 @@ Presto-io does not use its publisher identity to sign arbitrary community execut
 - SignPath pending/unavailable/failure, signing failure, verification failure, missing timestamp, invalid certificate chain, or publisher mismatch must block Windows official publication or mark it as `public trusted signing blocked`.
 - unsigned official Windows `.exe` must not be published as a normal official release asset.
 
-Phase 28 must preserve the artifact filenames and move the release sequence to:
+The release workflow preserves the artifact filenames and uses this release sequence:
 
 ```text
-build -> SignPath signing -> verify -> sha256sum
+SignPath preflight -> build -> SignPath signing -> verify -> sha256sum
 ```
 
 `SHA256SUMS`, registry `sha256`, and CDN mirrors must all be generated from the signed bytes.
+
+The workflow fails closed before build if the public signing configuration is missing. The failure summary includes `public trusted signing blocked`, the missing SignPath setting names, and the next setup action.
 
 ## SignPath GitHub trusted-build policy
 
@@ -50,13 +53,16 @@ The SignPath trusted-build policy file is `.signpath/policies/presto-io/release-
 
 That YAML only covers trusted-build policy checks such as GitHub-hosted runners, rerun handling, and branch ruleset expectations. It is not the whole release-signing boundary by itself.
 
-Phase 28 must enforce these additional hard gates in the GitHub workflow and SignPath project settings:
+The GitHub workflow and SignPath project settings enforce these additional hard gates:
 
 - GitHub workflow triggers are limited to protected `v*` release tags or the protected release workflow path.
 - PR, fork, `pull_request_target`, `workflow_dispatch`, ordinary branch, and local/manual requests must not submit public signing requests.
 - The SignPath project policy is bound to the exact `Presto-io/presto-official-templates` repository and approved release workflow origin.
 - The signing request uses the official build matrix's GitHub workflow artifact IDs rather than locally produced files.
 - Signed asset names match `presto-template-{name}-windows-amd64.exe` or `presto-template-{name}-windows-arm64.exe`.
+- The unsigned Windows asset set and signed Windows asset set must be strictly identical.
+- Each signed Windows asset must have a different SHA256 from the corresponding unsigned asset.
+- Authenticode verification runs on a Windows runner before the release job generates `SHA256SUMS`.
 
 ## Self-signed dev/UAT lane
 
@@ -82,7 +88,7 @@ Authenticode status valid, certificate chain valid, timestamp present, and publi
 
 ### Phase 28 release workflow
 
-Phase 28 owns the real release workflow integration. It must insert public SignPath signing after build artifact download and before `SHA256SUMS`, fail closed for official Windows `.exe` assets, and avoid public signing requests from PR, fork, ordinary branch, or local/manual execution paths.
+Phase 28 owns the real release workflow integration. The release workflow now inserts public SignPath signing after build artifact download and before `SHA256SUMS`, fails closed for official Windows `.exe` assets, and avoids public signing requests from PR, fork, ordinary branch, or local/manual execution paths.
 
 ### Phase 29 registry and Presto trust chain
 

@@ -53,10 +53,59 @@ jobs:
           echo "template=${TEMPLATE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-  validate:
+  signpath-preflight:
     permissions:
       contents: read
     needs: metadata
+    runs-on: ubuntu-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+      SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+      SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+      SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
+    steps:
+      - name: Require public trusted signing configuration
+        shell: bash
+        run: |
+          missing=()
+          for name in \
+            SIGNPATH_API_TOKEN \
+            SIGNPATH_ORGANIZATION_ID \
+            SIGNPATH_PROJECT_SLUG \
+            SIGNPATH_SIGNING_POLICY_SLUG \
+            SIGNPATH_ARTIFACT_CONFIGURATION_SLUG \
+            SIGNPATH_EXPECTED_PUBLISHER
+          do
+            if [ -z "${!name}" ]; then
+              missing+=("${name}")
+            fi
+          done
+
+          if [ "${#missing[@]}" -ne 0 ]; then
+            {
+              echo "## public trusted signing blocked"
+              echo
+              echo "Release tag: \`${GITHUB_REF_NAME}\`"
+              echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+              echo
+              echo "Missing SignPath configuration:"
+              for name in "${missing[@]}"; do
+                echo "- \`${name}\`"
+              done
+              echo
+              echo "Next step: configure SignPath Open Source signing for this repository, then rerun by pushing a new protected release tag."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "public trusted signing blocked: missing ${missing[*]}" >&2
+            exit 1
+          fi
+
+  validate:
+    permissions:
+      contents: read
+    needs: [metadata, signpath-preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -108,7 +157,7 @@ jobs:
   build:
     permissions:
       contents: read
-    needs: [metadata, validate]
+    needs: [metadata, signpath-preflight, validate]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -151,15 +200,156 @@ jobs:
           name: presto-template-${{ needs.metadata.outputs.template }}-${{ matrix.os }}-${{ matrix.arch }}
           path: presto-template-*
 
-  release:
+  sign-windows:
     permissions:
-      contents: write
+      actions: read
+      contents: read
     needs: [metadata, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           merge-multiple: true
+
+      - name: Capture unsigned release asset hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          windows=(presto-template-*-windows-*.exe)
+          if [ "${#windows[@]}" -eq 0 ]; then
+            echo "public trusted signing blocked: no Windows .exe assets were built" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "${windows[@]}" | sort > unsigned-windows-files.txt
+          sha256sum "${windows[@]}" | sort -k2 > unsigned-windows.sha256
+
+      - name: Upload unsigned Windows assets for SignPath
+        id: upload-unsigned-windows
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-windows-template-exes
+          path: presto-template-*-windows-*.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Submit SignPath signing request
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parameters: |
+            template: ${{ toJSON(needs.metadata.outputs.template) }}
+            version: ${{ toJSON(needs.metadata.outputs.version) }}
+
+      - name: Replace Windows assets with signed bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          mkdir -p signed-flat
+          signed_candidates=(signed-windows/**/presto-template-*-windows-*.exe)
+          if [ "${#signed_candidates[@]}" -eq 0 ]; then
+            echo "public trusted signing blocked: SignPath returned no signed Windows .exe assets" >&2
+            exit 1
+          fi
+
+          for signed in "${signed_candidates[@]}"; do
+            base="$(basename "$signed")"
+            if [ -e "signed-flat/${base}" ]; then
+              echo "public trusted signing blocked: duplicate signed asset ${base}" >&2
+              exit 1
+            fi
+            cp "$signed" "signed-flat/${base}"
+          done
+
+          (
+            cd signed-flat
+            printf '%s\n' presto-template-*-windows-*.exe | sort
+          ) > signed-windows-files.txt
+
+          if ! cmp -s unsigned-windows-files.txt signed-windows-files.txt; then
+            echo "public trusted signing blocked: signed Windows asset set differs from unsigned set" >&2
+            echo "unsigned:" >&2
+            cat unsigned-windows-files.txt >&2
+            echo "signed:" >&2
+            cat signed-windows-files.txt >&2
+            exit 1
+          fi
+
+          mapfile -t unsigned_files < unsigned-windows-files.txt
+          for file in "${unsigned_files[@]}"; do
+            cp "signed-flat/${file}" "${file}"
+          done
+
+          sha256sum "${unsigned_files[@]}" | sort -k2 > signed-windows.sha256
+          if cmp -s unsigned-windows.sha256 signed-windows.sha256; then
+            echo "public trusted signing blocked: Windows asset hashes did not change after signing" >&2
+            exit 1
+          fi
+
+      - name: Upload signed release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-release-assets
+          path: |
+            presto-template-*
+            unsigned-windows.sha256
+            signed-windows.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  verify-windows-signatures:
+    permissions:
+      contents: read
+    needs: [metadata, sign-windows]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-release-assets
+
+      - name: Verify Authenticode signatures
+        shell: pwsh
+        env:
+          SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $publishers = $env:SIGNPATH_EXPECTED_PUBLISHER -split '\s*,\s*' | Where-Object { $_ }
+          if (-not $publishers -or $publishers.Count -eq 0) {
+            throw 'public trusted signing blocked: SIGNPATH_EXPECTED_PUBLISHER is empty'
+          }
+
+          $exe = Get-ChildItem -LiteralPath . -Filter 'presto-template-*-windows-*.exe' -File
+          if (-not $exe -or $exe.Count -eq 0) {
+            throw 'public trusted signing blocked: no signed Windows .exe assets found'
+          }
+
+          .\scripts\verify-windows-signature.ps1 `
+            -InputPath $exe.FullName `
+            -ExpectedPublisher $publishers `
+            -RequireTimestamp
+
+  release:
+    permissions:
+      contents: write
+    needs: [metadata, sign-windows, verify-windows-signatures]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-release-assets
 
       - name: Generate checksums
         run: sha256sum presto-template-* > SHA256SUMS
