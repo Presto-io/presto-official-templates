@@ -5,8 +5,12 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      template:
+        description: 'Template name to sync (e.g. gongwen)'
+        required: true
+        type: string
       version:
-        description: 'Release version to sync (e.g. v1.1.1)'
+        description: 'Template version to sync (e.g. 1.2.1 or v1.2.1)'
         required: true
         type: string
 
@@ -14,20 +18,55 @@ jobs:
   refresh-registry-and-sync-cdn:
     runs-on: ubuntu-latest
     steps:
+      - name: Parse template release
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TEMPLATE: ${{ inputs.template }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "${RELEASE_TAG}" ]; then
+            TAG="${RELEASE_TAG}"
+            if [[ ! "${TAG}" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?)-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+              echo "Ignoring non-template release tag: ${TAG}"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            TEMPLATE="${BASH_REMATCH[1]}"
+            VERSION="${BASH_REMATCH[3]}"
+          else
+            TEMPLATE="${INPUT_TEMPLATE}"
+            VERSION="${INPUT_VERSION#v}"
+            TAG="${TEMPLATE}-v${VERSION}"
+          fi
+
+          {
+            echo "skip=false"
+            echo "template=${TEMPLATE}"
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Refresh template-registry
+        if: steps.release.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          TEMPLATE: ${{ steps.release.outputs.template }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           TARGET_REPO="Presto-io/template-registry"
           START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           EVENT_TYPE="official-release-published"
 
-          echo "🔄 Triggering ${TARGET_REPO} repository_dispatch for ${RELEASE_TAG}"
+          echo "Triggering ${TARGET_REPO} repository_dispatch for ${TEMPLATE} ${RELEASE_TAG}"
           gh api "repos/${TARGET_REPO}/dispatches" \
             -f event_type="${EVENT_TYPE}" \
-            -f "client_payload[force_rebuild]=true" \
-            -f "client_payload[version]=${RELEASE_TAG}"
+            -f "client_payload[force_rebuild]=false" \
+            -f "client_payload[template]=${TEMPLATE}" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[tag]=${RELEASE_TAG}"
 
           RUN_ID=""
           for attempt in $(seq 1 30); do
@@ -50,22 +89,25 @@ jobs:
           done
 
           if [ -z "${RUN_ID}" ]; then
-            echo "❌ Could not find the triggered template-registry workflow run"
+            echo "Could not find the triggered template-registry workflow run" >&2
             exit 1
           fi
 
-          echo "⏳ Waiting for template-registry run ${RUN_ID}"
+          echo "Waiting for template-registry run ${RUN_ID}"
           gh run watch "${RUN_ID}" -R "${TARGET_REPO}" --exit-status
 
-          echo "✅ template-registry refreshed for ${RELEASE_TAG}"
-
       - name: Trigger registry-deploy workflow
+        if: steps.release.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.PRESTO_PAT }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          TEMPLATE: ${{ steps.release.outputs.template }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           gh api repos/Presto-io/registry-deploy/dispatches \
             -f event_type=release-published \
-            -f "client_payload[version]=${RELEASE_TAG}"
+            -f "client_payload[template]=${TEMPLATE}" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[tag]=${RELEASE_TAG}"
 
-          echo "✅ Triggered CDN sync for ${RELEASE_TAG}"
+          echo "Triggered CDN sync for ${TEMPLATE} ${RELEASE_TAG}"

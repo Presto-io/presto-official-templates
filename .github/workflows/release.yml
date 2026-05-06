@@ -1,74 +1,117 @@
-name: Release
+name: Release Template
 
 on:
   push:
-    tags: ['v*']
+    tags: ['*-v*']
 
 permissions: {}
 
 jobs:
-  changes:
+  metadata:
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     outputs:
-      templates: ${{ steps.detect.outputs.templates }}
+      template: ${{ steps.parse.outputs.template }}
+      version: ${{ steps.parse.outputs.version }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
 
-      - name: Detect changed templates
-        id: detect
+      - name: Parse template release tag
+        id: parse
         shell: bash
         run: |
-          ALL_TEMPLATES='["gongwen","jiaoan-shicao"]'
+          TAG="${GITHUB_REF_NAME}"
 
-          # Find previous tag
-          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')
-
-          if [ -z "$PREV_TAG" ]; then
-            echo "First release, building all templates"
-            echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [[ ! "${TAG}" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?)-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            echo "Invalid template release tag: ${TAG}" >&2
+            echo "Expected format: {template}-v{semver}, for example gongwen-v1.2.3" >&2
+            exit 1
           fi
 
-          echo "Comparing $PREV_TAG..HEAD"
-          CHANGED=$(git diff --name-only "$PREV_TAG"..HEAD)
-          echo "$CHANGED"
+          TEMPLATE="${BASH_REMATCH[1]}"
+          VERSION="${BASH_REMATCH[3]}"
 
-          # Shared files changed → rebuild all
-          if echo "$CHANGED" | grep -qE '^(go\.(mod|sum)|\.github/|internal/)'; then
-            echo "Shared files changed, building all templates"
-            echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ ! -f "${TEMPLATE}/manifest.json" ]; then
+            echo "Template manifest not found: ${TEMPLATE}/manifest.json" >&2
+            exit 1
           fi
 
-          # Detect which template dirs have changes
-          TEMPLATES=()
-          for dir in gongwen jiaoan-shicao; do
-            if echo "$CHANGED" | grep -q "^${dir}/"; then
-              TEMPLATES+=("\"$dir\"")
-            fi
-          done
+          MANIFEST_NAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "${TEMPLATE}/manifest.json")"
+          MANIFEST_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "${TEMPLATE}/manifest.json")"
 
-          if [ ${#TEMPLATES[@]} -eq 0 ]; then
-            echo "No template changes detected, building all as fallback"
-            echo "templates=$ALL_TEMPLATES" >> "$GITHUB_OUTPUT"
+          if [ "${MANIFEST_NAME}" != "${TEMPLATE}" ]; then
+            echo "Manifest name ${MANIFEST_NAME} does not match tag template ${TEMPLATE}" >&2
+            exit 1
+          fi
+
+          if [ "${MANIFEST_VERSION}" != "${VERSION}" ]; then
+            echo "Manifest version ${MANIFEST_VERSION} does not match tag version ${VERSION}" >&2
+            exit 1
+          fi
+
+          echo "template=${TEMPLATE}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  validate:
+    permissions:
+      contents: read
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Validate selected template
+        shell: bash
+        env:
+          TEMPLATE: ${{ needs.metadata.outputs.template }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          GO_STDLIB_DENY: '^net$|^net/|^os/exec$|^plugin$|^debug/'
+        run: |
+          cd "${TEMPLATE}"
+          go build -trimpath -ldflags="-s -w" -o "../presto-template-${TEMPLATE}" .
+          cd ..
+
+          "./presto-template-${TEMPLATE}" --manifest | python3 -m json.tool > /dev/null
+          "./presto-template-${TEMPLATE}" --example | "./presto-template-${TEMPLATE}" > /dev/null
+          ACTUAL_VERSION="$("./presto-template-${TEMPLATE}" --version)"
+          test "${ACTUAL_VERSION}" = "${VERSION}"
+
+          FORBIDDEN="$(cd "${TEMPLATE}" && go list -f '{{join .Imports "\n"}}' ./... | grep -E "${GO_STDLIB_DENY}" || true)"
+          if [ -n "${FORBIDDEN}" ]; then
+            echo "SECURITY FAIL: ${TEMPLATE} imports forbidden packages: ${FORBIDDEN}" >&2
+            exit 1
+          fi
+
+          if unshare --net true 2>/dev/null; then
+            echo "# Test" | unshare --net "./presto-template-${TEMPLATE}" > /dev/null
           else
-            RESULT="[$(IFS=,; echo "${TEMPLATES[*]}")]"
-            echo "Building changed templates: $RESULT"
-            echo "templates=$RESULT" >> "$GITHUB_OUTPUT"
+            echo "SKIP: no network sandbox tool available"
+          fi
+
+          OUTPUT="$("./presto-template-${TEMPLATE}" --example | "./presto-template-${TEMPLATE}")"
+          if echo "${OUTPUT}" | grep -qiE '<html|<script|<iframe|<img|<link|<!DOCTYPE'; then
+            echo "SECURITY FAIL: ${TEMPLATE} output contains HTML" >&2
+            exit 1
+          fi
+          if ! echo "${OUTPUT}" | head -1 | grep -q '^[#/]'; then
+            echo "SECURITY FAIL: ${TEMPLATE} output first line is not a Typst directive" >&2
+            exit 1
           fi
 
   build:
     permissions:
-      contents: write
-    needs: changes
+      contents: read
+    needs: [metadata, validate]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        template: ${{ fromJson(needs.changes.outputs.templates) }}
         os: [darwin, linux, windows]
         arch: [amd64, arm64]
     steps:
@@ -77,41 +120,41 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Sync manifest version from release tag
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          python3 scripts/sync-manifest-version.py "${VERSION}" "${{ matrix.template }}/manifest.json"
-
       - name: Build
         shell: bash
         env:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
+          TEMPLATE: ${{ needs.metadata.outputs.template }}
         run: |
-          cd ${{ matrix.template }}
+          cd "${TEMPLATE}"
           EXT=""
-          if [ "${{ matrix.os }}" = "windows" ]; then EXT=".exe"; fi
-          go build -trimpath -ldflags="-s -w" -o "../presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
+          if [ "${GOOS}" = "windows" ]; then EXT=".exe"; fi
+          go build -trimpath -ldflags="-s -w" -o "../presto-template-${TEMPLATE}-${GOOS}-${GOARCH}${EXT}" .
 
       - name: Verify embedded manifest version
         if: matrix.os == 'linux' && matrix.arch == 'amd64'
         shell: bash
+        env:
+          TEMPLATE: ${{ needs.metadata.outputs.template }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          ACTUAL="$(./presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }} --version)"
+          BINARY="./presto-template-${TEMPLATE}-${TARGET_OS}-${TARGET_ARCH}"
+          ACTUAL="$("${BINARY}" --version)"
           test "${ACTUAL}" = "${VERSION}"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: presto-template-${{ needs.metadata.outputs.template }}-${{ matrix.os }}-${{ matrix.arch }}
           path: presto-template-*
 
   release:
     permissions:
       contents: write
-    needs: build
+    needs: [metadata, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -123,67 +166,8 @@ jobs:
 
       - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
+          name: presto-template-${{ needs.metadata.outputs.template }} v${{ needs.metadata.outputs.version }}
           files: |
             presto-template-*
             SHA256SUMS
           generate_release_notes: true
-
-  refresh-registry-and-sync-cdn:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Refresh template-registry
-        env:
-          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          TARGET_REPO="Presto-io/template-registry"
-          START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          EVENT_TYPE="official-release-published"
-
-          echo "🔄 Triggering ${TARGET_REPO} repository_dispatch for ${RELEASE_TAG}"
-          gh api "repos/${TARGET_REPO}/dispatches" \
-            -f event_type="${EVENT_TYPE}" \
-            -f "client_payload[force_rebuild]=true" \
-            -f "client_payload[version]=${RELEASE_TAG}"
-
-          RUN_ID=""
-          for attempt in $(seq 1 30); do
-            RUN_ID="$(gh run list \
-              -R "${TARGET_REPO}" \
-              --workflow "update-registry.yml" \
-              --event repository_dispatch \
-              --limit 20 \
-              --json databaseId,createdAt \
-              --jq '.[] | "\(.databaseId)\t\(.createdAt)"' \
-              | awk -v start="${START_TIME}" '$2 >= start { print $1; exit }' \
-              | head -n 1)"
-
-            if [ -n "${RUN_ID}" ]; then
-              break
-            fi
-
-            echo "  waiting for template-registry workflow to appear (${attempt}/30)..."
-            sleep 10
-          done
-
-          if [ -z "${RUN_ID}" ]; then
-            echo "❌ Could not find the triggered template-registry workflow run"
-            exit 1
-          fi
-
-          echo "⏳ Waiting for template-registry run ${RUN_ID}"
-          gh run watch "${RUN_ID}" -R "${TARGET_REPO}" --exit-status
-
-          echo "✅ template-registry refreshed for ${RELEASE_TAG}"
-
-      - name: Trigger registry-deploy workflow
-        env:
-          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          gh api repos/Presto-io/registry-deploy/dispatches \
-            -f event_type=release-published \
-            -f "client_payload[version]=${RELEASE_TAG}"
-
-          echo "✅ Triggered CDN sync for ${RELEASE_TAG}"
