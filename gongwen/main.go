@@ -871,7 +871,7 @@ func (c *converter) extractTable(n ast.Node) ([][]cellInfo, []east.Alignment) {
 }
 
 const tablePageLineBudget = 22
-const tableCaptionBottomGap = "((297mm - 37mm - 35mm) / 22 - zh(3))"
+const tableCaptionBottomGap = "(((297mm - 37mm - 35mm) / 22) - zh(3))"
 
 func estimatedTableRowLines(row []cellInfo) int {
 	maxCellRunes := 0
@@ -961,11 +961,11 @@ func tableCaptionCellContent(captionText string) string {
 	return "box(width: table-caption-width)[#align(center)[#pad(bottom: " + tableCaptionBottomGap + ")[#text(font: FONT_FS, size: zh(3))[" + captionText + "]]]]"
 }
 
-func tableCaptionBlockContent(captionText string) string {
-	return "#align(center)[\n  #pad(bottom: " + tableCaptionBottomGap + ")[#text(size: zh(3), font: FONT_FS)[" + captionText + "]]\n]\n"
+func tableCaptionCell(captionText string, maxCols int) string {
+	return "  table.cell(colspan: " + strconv.Itoa(maxCols) + ", align: center, stroke: none, inset: 0pt)[#align(center)[#pad(bottom: " + tableCaptionBottomGap + ")[#text(font: FONT_FS, size: zh(3))[" + captionText + "]]]],\n"
 }
 
-func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignment, caption string, captionNumber int, floating bool, repeatCaption bool) string {
+func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignment, caption string, captionNumber int, keepTogether bool, repeatCaption bool) string {
 	// Determine column count (max across all rows)
 	maxCols := 0
 	for _, row := range rows {
@@ -979,20 +979,8 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 
 	// Build Typst table using table.hline for three-line style
 	var buf strings.Builder
-	if floating {
-		buf.WriteString("#place(auto, float: true)[\n")
-		buf.WriteString("#block(width: 100%)[\n")
-	}
-
-	if caption != "" && !repeatCaption {
-		// Add table caption above the table (公文格式：表N 标题，三号仿宋，与图注一致)
-		// Use #h(1em) for spacing to prevent Typst from collapsing spaces.
-		// The bottom gap follows the 22-line page grid:
-		// (A4 height - top margin - bottom margin) / 22 - caption font size.
-		captionText := "表" + strconv.Itoa(captionNumber)
-		buf.WriteString("#block(sticky: true, width: 100%)[\n")
-		buf.WriteString(tableCaptionBlockContent(captionText + "#h(1em)" + caption))
-		buf.WriteString("]\n")
+	if keepTogether {
+		buf.WriteString("#block(breakable: false, width: 100%)[\n")
 	}
 
 	if repeatCaption {
@@ -1026,7 +1014,7 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 	buf.WriteString("  stroke: none,\n")
 
 	headerRows := 1
-	if repeatCaption {
+	if caption != "" {
 		headerRows = 2
 	}
 
@@ -1039,10 +1027,11 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 	// Bottom line (after last row = before row totalRows)
 	buf.WriteString("  table.hline(y: " + strconv.Itoa(totalRows+headerRows-1) + ", stroke: 0.75pt),\n")
 
-	// Header row (bold) and repeat it on continuation pages.
+	// Caption + header rows. Table captions are rendered as the first table row
+	// for both short and long tables so the caption-to-rule spacing is identical.
 	if len(rows) > 0 {
-		buf.WriteString("  table.header(repeat: true,\n")
 		if repeatCaption {
+			buf.WriteString("  table.header(repeat: true,\n")
 			captionText := "表" + strconv.Itoa(captionNumber)
 			continuedCaptionText := captionText
 			escapedCaption := typst.EscapeContent(caption)
@@ -1052,12 +1041,20 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 			} else {
 				continuedCaptionText += "（续）"
 			}
-			buf.WriteString("  table.cell(colspan: " + strconv.Itoa(maxCols) + ", align: center, stroke: none)[#context if here().page() == table-start-page { " + tableCaptionCellContent(captionText) + " } else { " + tableCaptionCellContent(continuedCaptionText) + " }],\n")
+			buf.WriteString("  table.cell(colspan: " + strconv.Itoa(maxCols) + ", align: center, stroke: none, inset: 0pt)[#context if here().page() == table-start-page { " + tableCaptionCellContent(captionText) + " } else { " + tableCaptionCellContent(continuedCaptionText) + " }],\n")
+			for _, cell := range rows[0] {
+				buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+			}
+			buf.WriteString("  ),\n")
+		} else {
+			if caption != "" {
+				captionText := "表" + strconv.Itoa(captionNumber) + "#h(1em)" + typst.EscapeContent(caption)
+				buf.WriteString(tableCaptionCell(captionText, maxCols))
+			}
+			for _, cell := range rows[0] {
+				buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+			}
 		}
-		for _, cell := range rows[0] {
-			buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
-		}
-		buf.WriteString("  ),\n")
 	}
 
 	// Body rows
@@ -1074,8 +1071,7 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 		buf.WriteString("}\n\n")
 	}
 
-	if floating {
-		buf.WriteString("]\n")
+	if keepTogether {
 		buf.WriteString("]\n\n")
 	}
 
@@ -1176,13 +1172,17 @@ func shouldStickSignatureToBlock(block string) bool {
 
 func renderSignatureBlock() string {
 	return `#v(18pt)
-#align(right, block[
+#block(width: 100%)[
+#align(right)[
+#box[
   #set align(center)
   #autoAuthor \
   #autoDate.display(
     "[year]年[month padding:none]月[day padding:none]日",
   )
-])
+]
+]
+]
 `
 }
 
@@ -1218,7 +1218,7 @@ func convert(fm frontMatter, body string) string {
 				out.WriteString(block)
 			}
 			out.WriteString("#place.flush()\n")
-			out.WriteString("#block(sticky: true)[\n")
+			out.WriteString("#block(sticky: true, width: 100%)[\n")
 			out.WriteString(blocks[len(blocks)-1])
 			out.WriteString(renderSignatureBlock())
 			out.WriteString("]\n")

@@ -17,7 +17,7 @@ func TestSingleImagesUseFloatingPlacement(t *testing.T) {
 	}
 }
 
-func TestShortTablesFloatCenteredAndUnsplit(t *testing.T) {
+func TestShortTablesStayInFlowCenteredAndUnsplit(t *testing.T) {
 	output := convertBody(`| 阶段 | 时间 | 负责部门 |
 |------|------|----------|
 | 自查自纠 | 3月1日-15日 | 各部门 |
@@ -26,17 +26,17 @@ func TestShortTablesFloatCenteredAndUnsplit(t *testing.T) {
 : 检查工作进度安排
 `)
 
-	if strings.Contains(output, "breakable: false") {
-		t.Fatal("expected short tables not to force unbreakable blocks")
+	if strings.Contains(output, "#place(auto, float: true)[") {
+		t.Fatal("expected short tables to stay in document flow")
 	}
-	if !strings.Contains(output, "#place(auto, float: true)[") {
-		t.Fatal("expected short tables to float")
+	if !strings.Contains(output, "#block(breakable: false, width: 100%)[") {
+		t.Fatal("expected short tables to stay unsplit in a full-width in-flow block")
 	}
-	if !strings.Contains(output, "#block(width: 100%)[") {
-		t.Fatal("expected floating short tables to use a full-width wrapper")
+	if !strings.Contains(output, "table.cell(colspan: 3, align: center, stroke: none, inset: 0pt)[#align(center)[#pad(bottom: (((297mm - 37mm - 35mm) / 22) - zh(3)))[#text(font: FONT_FS, size: zh(3))[表1#h(1em)检查工作进度安排]]]],") {
+		t.Fatal("expected short table captions to use the shared table-row caption spacing")
 	}
-	if !strings.Contains(output, "table.header(repeat: true,") {
-		t.Fatal("expected table headers to repeat across page breaks")
+	if strings.Contains(output, "table.header(repeat: true,") {
+		t.Fatal("expected short non-paginated tables to use a plain bold header row")
 	}
 	if !strings.Contains(output, "#align(center)[\n#table(") {
 		t.Fatal("expected table to stay centered")
@@ -70,8 +70,8 @@ func TestSignatureFlushesFloatsAndSticksToLastParagraph(t *testing.T) {
 
 	tableIdx := strings.Index(output, "#align(center)[\n#table(")
 	flushIdx := strings.Index(output, "#place.flush()")
-	stickyIdx := strings.Index(output, "#block(sticky: true)[")
-	signatureIdx := strings.Index(output, "#align(right, block[")
+	stickyIdx := strings.Index(output, "#block(sticky: true, width: 100%)[")
+	signatureIdx := strings.Index(output, "#block(width: 100%)[\n#align(right)[")
 
 	if tableIdx < 0 {
 		t.Fatal("expected short table to render")
@@ -81,6 +81,9 @@ func TestSignatureFlushesFloatsAndSticksToLastParagraph(t *testing.T) {
 	}
 	if !strings.Contains(output[stickyIdx:signatureIdx], "特此通知。") {
 		t.Fatal("expected the final paragraph to stick with the signature")
+	}
+	if !strings.Contains(output, "#box[\n  #set align(center)") {
+		t.Fatal("expected signature content to keep centered author/date inside the right-aligned box")
 	}
 }
 
@@ -112,10 +115,13 @@ func TestLongTablesRepeatContinuationCaptionInHeader(t *testing.T) {
 	if !strings.Contains(output, "measure(text(font: FONT_FS, size: zh(3))[表1#h(1em)事项清单（续）]).width") {
 		t.Fatal("expected continuation caption width to be measured from the actual caption")
 	}
-	if !strings.Contains(output, "((297mm - 37mm - 35mm) / 22 - zh(3))") {
+	if !strings.Contains(output, "(((297mm - 37mm - 35mm) / 22) - zh(3))") {
 		t.Fatal("expected table caption spacing to be derived from the 22-line page grid")
 	}
-	if !strings.Contains(output, "box(width: table-caption-width)[#align(center)[#pad(bottom: ((297mm - 37mm - 35mm) / 22 - zh(3)))[#text(font: FONT_FS, size: zh(3))[表1#h(1em)事项清单（续）]]]]") {
+	if !strings.Contains(output, "table.cell(colspan: 2, align: center, stroke: none, inset: 0pt)[#context if here().page() == table-start-page") {
+		t.Fatal("expected repeated table captions to use the same zero-inset table caption row")
+	}
+	if !strings.Contains(output, "box(width: table-caption-width)[#align(center)[#pad(bottom: (((297mm - 37mm - 35mm) / 22) - zh(3)))[#text(font: FONT_FS, size: zh(3))[表1#h(1em)事项清单（续）]]]]") {
 		t.Fatal("expected continuation caption to use the same centered text style and grid-derived spacing as standalone captions")
 	}
 	if strings.Contains(output, "pad(bottom: 8pt)") {
@@ -158,7 +164,7 @@ func TestShortTableCaptionSpacingUsesPageGrid(t *testing.T) {
 : 工作安排
 `)
 
-	if !strings.Contains(output, "#pad(bottom: ((297mm - 37mm - 35mm) / 22 - zh(3)))[#text(size: zh(3), font: FONT_FS)[表1#h(1em)工作安排]]") {
-		t.Fatal("expected standalone table captions to use 22-line page-grid spacing")
+	if !strings.Contains(output, "table.cell(colspan: 2, align: center, stroke: none, inset: 0pt)[#align(center)[#pad(bottom: (((297mm - 37mm - 35mm) / 22) - zh(3)))[#text(font: FONT_FS, size: zh(3))[表1#h(1em)工作安排]]]],") {
+		t.Fatal("expected standalone table captions to use the shared table-row spacing")
 	}
 }
