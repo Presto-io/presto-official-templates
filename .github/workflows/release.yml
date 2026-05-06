@@ -77,6 +77,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Sync manifest version from release tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python3 scripts/sync-manifest-version.py "${VERSION}" "${{ matrix.template }}/manifest.json"
+
       - name: Build
         shell: bash
         env:
@@ -88,6 +94,14 @@ jobs:
           EXT=""
           if [ "${{ matrix.os }}" = "windows" ]; then EXT=".exe"; fi
           go build -trimpath -ldflags="-s -w" -o "../presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
+
+      - name: Verify embedded manifest version
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ACTUAL="$(./presto-template-${{ matrix.template }}-${{ matrix.os }}-${{ matrix.arch }} --version)"
+          test "${ACTUAL}" = "${VERSION}"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
