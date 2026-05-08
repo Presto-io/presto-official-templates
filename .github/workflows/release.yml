@@ -14,6 +14,8 @@ jobs:
     outputs:
       template: ${{ steps.parse.outputs.template }}
       version: ${{ steps.parse.outputs.version }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
+      allow_unsigned_windows: ${{ steps.parse.outputs.allow_unsigned_windows }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -31,6 +33,16 @@ jobs:
 
           TEMPLATE="${BASH_REMATCH[1]}"
           VERSION="${BASH_REMATCH[3]}"
+          IS_PRERELEASE=false
+          ALLOW_UNSIGNED_WINDOWS=false
+
+          if [[ "${VERSION}" == *-* ]]; then
+            IS_PRERELEASE=true
+          fi
+
+          if [[ "${VERSION}" == *"-beta"* ]]; then
+            ALLOW_UNSIGNED_WINDOWS=true
+          fi
 
           if [ ! -f "${TEMPLATE}/manifest.json" ]; then
             echo "Template manifest not found: ${TEMPLATE}/manifest.json" >&2
@@ -52,6 +64,8 @@ jobs:
 
           echo "template=${TEMPLATE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=${IS_PRERELEASE}" >> "$GITHUB_OUTPUT"
+          echo "allow_unsigned_windows=${ALLOW_UNSIGNED_WINDOWS}" >> "$GITHUB_OUTPUT"
 
   signpath-preflight:
     permissions:
@@ -65,10 +79,23 @@ jobs:
       SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
       SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
       SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
+      ALLOW_UNSIGNED_WINDOWS: ${{ needs.metadata.outputs.allow_unsigned_windows }}
     steps:
       - name: Require public trusted signing configuration
         shell: bash
         run: |
+          if [ "${ALLOW_UNSIGNED_WINDOWS}" = "true" ]; then
+            {
+              echo "## beta release uses unsigned Windows assets"
+              echo
+              echo "Release tag: \`${GITHUB_REF_NAME}\`"
+              echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+              echo
+              echo "This beta release skips SignPath trusted signing. Stable official releases still fail closed when SignPath is not configured."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           missing=()
           for name in \
             SIGNPATH_API_TOKEN \
@@ -226,6 +253,7 @@ jobs:
           sha256sum "${windows[@]}" | sort -k2 > unsigned-windows.sha256
 
       - name: Upload unsigned Windows assets for SignPath
+        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
         id: upload-unsigned-windows
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -235,6 +263,7 @@ jobs:
           retention-days: 1
 
       - name: Submit SignPath signing request
+        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
         id: signpath
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
         with:
@@ -252,6 +281,7 @@ jobs:
             version: ${{ toJSON(needs.metadata.outputs.version) }}
 
       - name: Replace Windows assets with signed bytes
+        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -298,14 +328,26 @@ jobs:
             exit 1
           fi
 
+      - name: Record unsigned beta Windows assets
+        if: needs.metadata.outputs.allow_unsigned_windows == 'true'
+        shell: bash
+        run: |
+          {
+            echo "## unsigned Windows beta assets"
+            echo
+            echo "Release tag: \`${GITHUB_REF_NAME}\`"
+            echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+            echo
+            echo "Windows .exe assets are intentionally unsigned for this beta release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload signed release assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: signed-release-assets
           path: |
             presto-template-*
-            unsigned-windows.sha256
-            signed-windows.sha256
+            *-windows.sha256
           if-no-files-found: error
           retention-days: 1
 
@@ -321,6 +363,7 @@ jobs:
           name: signed-release-assets
 
       - name: Verify Authenticode signatures
+        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
         shell: pwsh
         env:
           SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
@@ -341,6 +384,13 @@ jobs:
             -ExpectedPublisher $publishers `
             -RequireTimestamp
 
+      - name: Skip Authenticode verification for beta
+        if: needs.metadata.outputs.allow_unsigned_windows == 'true'
+        shell: pwsh
+        run: |
+          "Beta release: skipping Authenticode verification for unsigned Windows assets." |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
   release:
     permissions:
       contents: write
@@ -357,6 +407,7 @@ jobs:
       - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           name: presto-template-${{ needs.metadata.outputs.template }} v${{ needs.metadata.outputs.version }}
+          prerelease: ${{ needs.metadata.outputs.is_prerelease == 'true' }}
           files: |
             presto-template-*
             SHA256SUMS
@@ -364,6 +415,7 @@ jobs:
 
   refresh-registry-and-sync-cdn:
     needs: [metadata, release]
+    if: needs.metadata.outputs.is_prerelease != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Refresh template-registry

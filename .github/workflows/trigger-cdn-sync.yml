@@ -23,11 +23,17 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           INPUT_TEMPLATE: ${{ inputs.template }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ -n "${RELEASE_TAG}" ]; then
             TAG="${RELEASE_TAG}"
+            if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+              echo "Skipping prerelease template registry refresh: ${TAG}"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             if [[ ! "${TAG}" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?)-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
               echo "Ignoring non-template release tag: ${TAG}"
               echo "skip=true" >> "$GITHUB_OUTPUT"

@@ -25,6 +25,9 @@ Presto-io does not use its publisher identity to sign arbitrary community execut
 ## Trust boundary
 
 - `official` Windows `.exe` assets must be signed before public release.
+- `beta` prerelease Windows `.exe` assets may be published unsigned for
+  release-pipeline testing, but must be marked as GitHub prereleases and must
+  not automatically refresh the production registry/CDN.
 - `verified` Windows `.exe` assets must satisfy the same Authenticode validity rules before entering verified trust.
 - `community` templates are not signed with the Presto-io publisher identity and must not be labeled `signed` or `verified` by default.
 - self-signed output is `dev/UAT only` and never valid for official/verified public release.
@@ -36,6 +39,9 @@ Presto-io does not use its publisher identity to sign arbitrary community execut
 - Windows `.exe` assets must be signed and verified before `SHA256SUMS` is generated.
 - SignPath pending/unavailable/failure, signing failure, verification failure, missing timestamp, invalid certificate chain, or publisher mismatch must block Windows official publication or mark it as `public trusted signing blocked`.
 - unsigned official Windows `.exe` must not be published as a normal official release asset.
+- `*-v*-beta*` template tags skip SignPath and Authenticode gates, publish as
+  GitHub prereleases, and are excluded from automatic production registry/CDN
+  sync.
 
 The release workflow preserves the artifact filenames and uses this release sequence:
 
