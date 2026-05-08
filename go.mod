@@ -1,6 +1,6 @@
 module github.com/Presto-io/presto-official-templates
 
-go 1.25
+go 1.26.3
 
 require (
 	github.com/yuin/goldmark v1.7.8
