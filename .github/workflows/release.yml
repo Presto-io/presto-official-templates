@@ -415,7 +415,6 @@ jobs:
 
   refresh-registry-and-sync-cdn:
     needs: [metadata, release]
-    if: needs.metadata.outputs.is_prerelease != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Refresh template-registry
@@ -424,18 +423,22 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           TEMPLATE: ${{ needs.metadata.outputs.template }}
           VERSION: ${{ needs.metadata.outputs.version }}
+          REGISTRY_CHANNEL: ${{ needs.metadata.outputs.is_prerelease == 'true' && 'prerelease' || 'production' }}
+          ALLOW_PRERELEASE: ${{ needs.metadata.outputs.is_prerelease == 'true' && 'true' || 'false' }}
         run: |
           TARGET_REPO="Presto-io/template-registry"
           START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           EVENT_TYPE="official-release-published"
 
-          echo "Triggering ${TARGET_REPO} repository_dispatch for ${TEMPLATE} ${RELEASE_TAG}"
+          echo "Triggering ${TARGET_REPO} repository_dispatch for ${TEMPLATE} ${RELEASE_TAG} (${REGISTRY_CHANNEL})"
           gh api "repos/${TARGET_REPO}/dispatches" \
             -f event_type="${EVENT_TYPE}" \
             -f "client_payload[force_rebuild]=false" \
             -f "client_payload[template]=${TEMPLATE}" \
             -f "client_payload[version]=${VERSION}" \
-            -f "client_payload[tag]=${RELEASE_TAG}"
+            -f "client_payload[tag]=${RELEASE_TAG}" \
+            -f "client_payload[channel]=${REGISTRY_CHANNEL}" \
+            -f "client_payload[allow_prerelease]=${ALLOW_PRERELEASE}"
 
           RUN_ID=""
           for attempt in $(seq 1 30); do
@@ -471,11 +474,13 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           TEMPLATE: ${{ needs.metadata.outputs.template }}
           VERSION: ${{ needs.metadata.outputs.version }}
+          REGISTRY_CHANNEL: ${{ needs.metadata.outputs.is_prerelease == 'true' && 'prerelease' || 'production' }}
         run: |
           gh api repos/Presto-io/registry-deploy/dispatches \
             -f event_type=release-published \
             -f "client_payload[template]=${TEMPLATE}" \
             -f "client_payload[version]=${VERSION}" \
-            -f "client_payload[tag]=${RELEASE_TAG}"
+            -f "client_payload[tag]=${RELEASE_TAG}" \
+            -f "client_payload[channel]=${REGISTRY_CHANNEL}"
 
-          echo "Triggered CDN sync for ${TEMPLATE} ${RELEASE_TAG}"
+          echo "Triggered CDN sync for ${TEMPLATE} ${RELEASE_TAG} (${REGISTRY_CHANNEL})"
