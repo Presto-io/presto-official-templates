@@ -351,7 +351,26 @@ func TestEvaluationOrderedListRowsDefaultsSummaryAndEscaping(t *testing.T) {
 }
 
 func TestLegacyActivityOnlyExampleStillRenders(t *testing.T) {
-	output := convertMarkdown(exampleMD)
+	output := convertMarkdown(`---
+template: "jiaoan-shicao"
+---
+
+## 教学活动设计——PLC 基本指令应用
+
+### 认识 PLC 硬件——了解 PLC 的基本组成与接线方法
+
+#### 活动一：PLC 硬件认知
+
+##### 0.5H
+
+PLC 的基本组成：CPU 模块、输入模块、输出模块、电源模块。
+
+观察实训台上的 PLC 设备，识别各模块位置及功能。
+
+展示 PLC 实物，讲解各模块的功能与作用。
+
+实物展示、讲练结合
+`)
 
 	for _, want := range []string{"教学活动", "学习内容", "学生活动", "教师活动", "教学方法与手段", "课时分配"} {
 		if !strings.Contains(output, want) {
@@ -360,6 +379,16 @@ func TestLegacyActivityOnlyExampleStillRenders(t *testing.T) {
 	}
 	if strings.Contains(output, "教学设计方案（二）") {
 		t.Fatal("did not expect template-only frontmatter to generate the new cover")
+	}
+}
+
+func TestEmbeddedExampleRendersCompleteTeachingDesign(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+
+	for _, want := range []string{"教学设计方案（二）", "电工基本技能训练", "学习任务分析", "教学活动设计", "学业评价", "小结"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected embedded example output to contain %q", want)
+		}
 	}
 }
 
