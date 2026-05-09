@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -383,13 +384,108 @@ PLC 的基本组成：CPU 模块、输入模块、输出模块、电源模块。
 }
 
 func TestEmbeddedExampleRendersCompleteTeachingDesign(t *testing.T) {
+	fm, body := parseLessonFrontMatter(exampleMD)
+	sections := parseMarkdown(body)
 	output := convertMarkdown(exampleMD)
 
+	if fm.TotalHours != "8" {
+		t.Fatalf("expected embedded example total_hours to be 8, got %q", fm.TotalHours)
+	}
+	assertSectionOrder(t, sections, []string{"学习任务分析", "教学活动设计", "学业评价"})
+	if got := countActivityRows(sections); got < 8 {
+		t.Fatalf("expected embedded example to contain at least 8 activity hour rows, got %d", got)
+	}
+	if got := sumActivityHours(sections); got != 8 {
+		t.Fatalf("expected embedded example activity hours to total 8, got %.1f", got)
+	}
+	if got := countEvaluationRows(sections); got < 5 {
+		t.Fatalf("expected embedded example to contain at least 5 evaluation rows, got %d", got)
+	}
 	for _, want := range []string{"教学设计方案（二）", "电工基本技能训练", "学习任务分析", "教学活动设计", "学业评价", "小结"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected embedded example output to contain %q", want)
 		}
 	}
+}
+
+func assertSectionOrder(t *testing.T, sections []DocumentSection, want []string) {
+	t.Helper()
+	next := 0
+	for _, section := range sections {
+		if next < len(want) && strings.HasPrefix(section.H2Title, want[next]) {
+			next++
+		}
+	}
+	if next != len(want) {
+		t.Fatalf("expected sections to appear in order %v, got %v", want, sectionTitles(sections))
+	}
+}
+
+func sectionTitles(sections []DocumentSection) []string {
+	titles := make([]string, 0, len(sections))
+	for _, section := range sections {
+		titles = append(titles, section.H2Title)
+	}
+	return titles
+}
+
+func countActivityRows(sections []DocumentSection) int {
+	count := 0
+	for _, section := range sections {
+		if !strings.HasPrefix(section.H2Title, "教学活动设计") {
+			continue
+		}
+		for _, item := range section.Items {
+			if item.Table == nil {
+				continue
+			}
+			for _, h4 := range item.Table.H4Blocks {
+				count += len(h4.H5Blocks)
+			}
+		}
+	}
+	return count
+}
+
+func sumActivityHours(sections []DocumentSection) float64 {
+	total := 0.0
+	for _, section := range sections {
+		if !strings.HasPrefix(section.H2Title, "教学活动设计") {
+			continue
+		}
+		for _, item := range section.Items {
+			if item.Table == nil {
+				continue
+			}
+			for _, h4 := range item.Table.H4Blocks {
+				for _, h5 := range h4.H5Blocks {
+					value := strings.TrimSpace(h5.Title)
+					value = strings.TrimSuffix(strings.TrimSuffix(value, "H"), "h")
+					hours, err := strconv.ParseFloat(value, 64)
+					if err == nil {
+						total += hours
+					}
+				}
+			}
+		}
+	}
+	return total
+}
+
+func countEvaluationRows(sections []DocumentSection) int {
+	count := 0
+	for _, section := range sections {
+		if !strings.HasPrefix(section.H2Title, "学业评价") {
+			continue
+		}
+		for _, line := range section.RawLines {
+			line = strings.TrimSpace(line)
+			if len(line) >= 3 && line[1] == '.' && line[0] >= '1' && line[0] <= '9' {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func TestFullCombinedInputOrderAndPagebreaks(t *testing.T) {
