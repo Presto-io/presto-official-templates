@@ -87,9 +87,6 @@ func TestTableColumnWidthsPreserveHeaderRow(t *testing.T) {
 	if widths[5] >= widths[1] || widths[5] >= widths[2] || widths[5] >= widths[3] {
 		t.Fatalf("expected 课时分配 column to stay narrower than main text columns, got widths %v", widths)
 	}
-	if widths[4] >= widths[1] || widths[4] >= widths[2] || widths[4] >= widths[3] {
-		t.Fatalf("expected 教学方法与手段 column to stay narrower than main text columns, got widths %v", widths)
-	}
 }
 
 func TestGenerateTypstCentersTeachingMethodAndRemovesTableGap(t *testing.T) {

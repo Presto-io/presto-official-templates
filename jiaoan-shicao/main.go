@@ -38,7 +38,7 @@ const preamble = `// 中文字号转换函数
 
 #set page(
   paper: "a4",
-  flipped: true,
+  flipped: false,
   margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)
 )
 
@@ -57,7 +57,7 @@ const preamble = `// 中文字号转换函数
 ]
 `
 
-const tableTotalWidthCM = 25.04
+const tableTotalWidthCM = 16.34
 const sectionHeadingGap = "10pt"
 
 // H5Block 存储五级标题及其内容
@@ -562,7 +562,7 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 	sb.WriteString("#v(54pt)\n")
 	sb.WriteString("#align(center)[\n")
 	sb.WriteString("  #table(\n")
-	sb.WriteString("    columns: (5.2cm, 12.8cm),\n")
+	sb.WriteString("    columns: (3.4cm, 11.6cm),\n")
 	sb.WriteString("    stroke: none,\n")
 	sb.WriteString("    align: (right + horizon, left + horizon),\n")
 
@@ -608,7 +608,7 @@ func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSect
 	sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(section.H2Title), sectionHeadingGap))
 	sb.WriteString("#align(center)[\n")
 	sb.WriteString("  #table(\n")
-	sb.WriteString("    columns: (3.0cm, 4.5cm, 4.0cm, 3.3cm, 5.0cm, 5.24cm),\n")
+	sb.WriteString("    columns: (2.2cm, 3.2cm, 2.2cm, 2.4cm, 3.1cm, 3.24cm),\n")
 	sb.WriteString("    stroke: 0.5pt,\n")
 	sb.WriteString("    align: center + horizon,\n")
 	sb.WriteString(fmt.Sprintf("    [学习任务], table.cell(colspan: 5)[%s],\n", typst.EscapeContent(fields["学习任务"])))
@@ -642,7 +642,7 @@ func renderEvaluationSection(sb *strings.Builder, section DocumentSection) {
 	sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(section.H2Title), sectionHeadingGap))
 	sb.WriteString("#align(center)[\n")
 	sb.WriteString("  #table(\n")
-	sb.WriteString("    columns: (1.6cm, 5.8cm, 12.4cm, 5.24cm),\n")
+	sb.WriteString("    columns: (1.2cm, 3.2cm, 8.6cm, 3.34cm),\n")
 	sb.WriteString("    stroke: 0.5pt,\n")
 	sb.WriteString("    align: center + horizon,\n")
 	sb.WriteString("    [序号], [考核项目], [考核细则], [考核方式],\n")
