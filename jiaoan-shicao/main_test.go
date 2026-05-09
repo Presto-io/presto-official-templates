@@ -408,6 +408,72 @@ func TestEmbeddedExampleRendersCompleteTeachingDesign(t *testing.T) {
 	}
 }
 
+func TestEmbeddedExampleReleaseTypstStructure(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+
+	for _, want := range []string{
+		"教学设计方案（二）",
+		"课程名称",
+		"课程属性",
+		"教材名称",
+		"教学班级",
+		"计划总课时",
+		"教师姓名",
+		"使用时间",
+		"学习任务分析",
+		"学习任务",
+		"课时",
+		"起止日期",
+		"一、学习任务描述",
+		"二、学习目标",
+		"三、学习内容",
+		"四、学生情况分析",
+		"五、学习资源",
+		"工量具、设备",
+		"耗材",
+		"其它",
+		"教学活动设计——电工基本技能训练",
+		"教学活动",
+		"学习内容",
+		"学生活动",
+		"教师活动",
+		"教学方法与手段",
+		"课时分配",
+		"学业评价",
+		"序号",
+		"考核项目",
+		"考核细则",
+		"考核方式",
+		"小结",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected embedded example release output to contain %q", want)
+		}
+	}
+	if count := strings.Count(output, "#pagebreak()"); count < 3 {
+		t.Fatalf("expected at least three release pagebreaks, got %d", count)
+	}
+	for _, row := range []string{"[1]", "[2]", "[3]", "[4]", "[5]"} {
+		if !strings.Contains(output, row) {
+			t.Fatalf("expected release evaluation row marker %q", row)
+		}
+	}
+}
+
+func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+
+	for _, want := range []string{
+		"flipped: false",
+		"stroke: (bottom: 0.5pt)",
+		"#set page(",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected embedded example release format signal %q", want)
+		}
+	}
+}
+
 func assertSectionOrder(t *testing.T, sections []DocumentSection, want []string) {
 	t.Helper()
 	next := 0
