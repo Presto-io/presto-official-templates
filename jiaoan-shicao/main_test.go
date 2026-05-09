@@ -463,6 +463,8 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 	for _, want := range []string{
 		"flipped: false",
 		"stroke: (bottom: 0.5pt)",
+		"table.cell(stroke: (bottom: 0.5pt))",
+		"2026 年 5 月 12 日 —— 2026 年 5 月 15 日",
 		"#set page(",
 	} {
 		if !strings.Contains(output, want) {

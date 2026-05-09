@@ -571,7 +571,7 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 		if key == "课程属性" {
 			value = renderCourseAttribute(value)
 		}
-		sb.WriteString(fmt.Sprintf("    [%s：], [%s],\n", typst.EscapeContent(key), typst.EscapeContent(value)))
+		sb.WriteString(fmt.Sprintf("    [%s：], table.cell(stroke: (bottom: 0.5pt))[%s],\n", typst.EscapeContent(key), typst.EscapeContent(value)))
 		sb.WriteString("    table.cell(colspan: 2)[#v(8pt)],\n")
 	}
 
