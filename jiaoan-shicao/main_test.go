@@ -279,9 +279,11 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		"#v(4.33cm)",
 		"#h(4.50cm)#text(font: FONT_SONG, size: 21.5pt)[教学设计方案（二）]",
 		"#v(7.20cm)",
-		"#h(1.44cm)#text(font: FONT_SONG, size: 14pt)[课程名称：]",
-		"width: 11.75cm",
-		"#v(0.72cm)",
+		"#h(1.44cm)#text(font: FONT_SONG, size: 14pt)[#table(",
+		"columns: (2.75cm, 0.35cm, 11.15cm)",
+		"[#text(tracking: 0.08em)[课程名称]], [：]",
+		"table.cell(stroke: (bottom: 0.5pt), align: center + horizon)",
+		"table.cell(colspan: 3)[#v(0.72cm)]",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected Word-sized cover output to contain %q", want)
@@ -293,8 +295,8 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		t.Fatal("expected cover before learning-analysis section")
 	}
 	coverOutput := output[coverStart:analysisStart]
-	if strings.Contains(coverOutput, "table.cell") {
-		t.Fatal("expected Word-sized cover to render as fixed paragraphs, not a table")
+	if !strings.Contains(coverOutput, "[：]") {
+		t.Fatal("expected cover table to keep colons in their own alignment column")
 	}
 }
 
@@ -303,7 +305,7 @@ func TestLearningTaskAnalysisFieldsBlocksResourcesAndEscaping(t *testing.T) {
 
 学习任务: PLC 接线
 课时：4
-起止日期：5 月 1 日——5 月 2 日
+起止日期：2026 年 5 月 1 日——2026 年 5 月 2 日
 
 ### 一、 学习任务描述
 
@@ -331,6 +333,12 @@ func TestLearningTaskAnalysisFieldsBlocksResourcesAndEscaping(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected learning analysis output to contain %q", want)
 		}
+	}
+	if strings.Contains(output, "2026 年 5 月 1 日") {
+		t.Fatal("expected learning-analysis date range to omit years")
+	}
+	if !strings.Contains(output, "columns: (") || !strings.Contains(output, "table.cell(colspan: 6, inset: 0pt, stroke: none)[#table(") {
+		t.Fatal("expected learning resources to render as a nested dynamic-width resource table")
 	}
 }
 
@@ -456,7 +464,7 @@ func TestEmbeddedExampleReleaseTypstStructure(t *testing.T) {
 		"工量具、设备",
 		"耗材",
 		"其它",
-		"教学活动设计——电工基本技能训练",
+		"教学活动设计",
 		"教学活动",
 		"学习内容",
 		"学生活动",
@@ -474,6 +482,9 @@ func TestEmbeddedExampleReleaseTypstStructure(t *testing.T) {
 			t.Fatalf("expected embedded example release output to contain %q", want)
 		}
 	}
+	if strings.Contains(output, "#section-title[教学活动设计——") {
+		t.Fatal("expected activity section title to omit dash and task name")
+	}
 	if count := strings.Count(output, "#pagebreak()"); count < 3 {
 		t.Fatalf("expected at least three release pagebreaks, got %d", count)
 	}
@@ -481,6 +492,20 @@ func TestEmbeddedExampleReleaseTypstStructure(t *testing.T) {
 		if !strings.Contains(output, row) {
 			t.Fatalf("expected release evaluation row marker %q", row)
 		}
+	}
+}
+
+func TestEvaluationProjectAndDetailsAreCentered(t *testing.T) {
+	output := convertMarkdown(`## 学业评价
+
+1. 安全文明；按规程操作；过程观察
+`)
+
+	if !strings.Contains(output, "align(center + horizon)[安全文明]") {
+		t.Fatal("expected evaluation project cells to be centered")
+	}
+	if !strings.Contains(output, "align(center + horizon)[按规程操作]") {
+		t.Fatal("expected evaluation detail cells to be centered")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -79,8 +80,12 @@ const coverTitleTopGap = "4.33cm"
 const coverTitleIndent = "4.50cm"
 const coverFieldTopGap = "7.20cm"
 const coverFieldIndent = "1.44cm"
-const coverValueUnderlineWidth = "11.75cm"
+const coverLabelColumnWidth = "2.75cm"
+const coverColonColumnWidth = "0.35cm"
+const coverValueUnderlineWidth = "11.15cm"
 const coverFieldGap = "0.72cm"
+
+var chineseYearPattern = regexp.MustCompile(`\d{4}\s*年\s*`)
 
 // H5Block 存储五级标题及其内容
 type H5Block struct {
@@ -444,7 +449,7 @@ func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSecti
 }
 
 func renderActivitySection(sb *strings.Builder, section DocumentSection) {
-	sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(section.H2Title), sectionHeadingGap))
+	sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(activitySectionTitle(section.H2Title)), sectionHeadingGap))
 
 	chapterColumnSpecs := sectionColumnSpecs(section)
 	chapterIdx := 0
@@ -605,19 +610,23 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 	sb.WriteString(fmt.Sprintf("\n#v(%s)\n", coverTitleTopGap))
 	sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 21.5pt)[%s]\n", coverTitleIndent, typst.EscapeContent(title)))
 	sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldTopGap))
+	sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 14pt)[#table(\n", coverFieldIndent))
+	sb.WriteString(fmt.Sprintf("  columns: (%s, %s, %s),\n", coverLabelColumnWidth, coverColonColumnWidth, coverValueUnderlineWidth))
+	sb.WriteString("  stroke: none,\n")
+	sb.WriteString("  align: (center + horizon, center + horizon, center + horizon),\n")
+	sb.WriteString("  inset: 0pt,\n")
 
 	for index, key := range fieldOrder {
 		value := fm.fieldValue(key)
 		if key == "课程属性" {
 			value = renderCourseAttribute(value)
-			sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 14pt)[%s：%s]\n", coverFieldIndent, typst.EscapeContent(key), typst.EscapeContent(value)))
-		} else {
-			sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 14pt)[%s：]#box(width: %s, inset: (left: 0.10cm, right: 0.10cm, bottom: 1pt), stroke: (bottom: 0.5pt))[#text(font: FONT_SONG, size: 14pt)[%s]]\n", coverFieldIndent, typst.EscapeContent(key), coverValueUnderlineWidth, typst.EscapeContent(value)))
 		}
+		sb.WriteString(fmt.Sprintf("  [#text(tracking: 0.08em)[%s]], [：], table.cell(stroke: (bottom: 0.5pt), align: center + horizon)[%s],\n", typst.EscapeContent(key), typst.EscapeContent(value)))
 		if index < len(fieldOrder)-1 {
-			sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldGap))
+			sb.WriteString(fmt.Sprintf("  table.cell(colspan: 3)[#v(%s)],\n", coverFieldGap))
 		}
 	}
+	sb.WriteString(")]\n")
 }
 
 func renderCourseAttribute(value string) string {
@@ -630,6 +639,43 @@ func renderCourseAttribute(value string) string {
 	default:
 		return "□基本技能课程  □工学一体化课程"
 	}
+}
+
+func activitySectionTitle(title string) string {
+	if strings.Contains(normalizeTitle(title), "教学活动设计") {
+		return "教学活动设计"
+	}
+	return title
+}
+
+func formatLearningTaskDate(value string) string {
+	return strings.TrimSpace(chineseYearPattern.ReplaceAllString(value, ""))
+}
+
+func resourceColumnSpec(resources map[string]string) string {
+	labels := []string{"工量具、设备", "耗材", "其它"}
+	minWidths := []float64{3.2, 2.6, 2.2}
+	weights := make([]float64, len(labels))
+	totalMin := 0.0
+	totalWeight := 0.0
+	for i, label := range labels {
+		totalMin += minWidths[i]
+		content := label + "：" + resources[label]
+		weights[i] = math.Sqrt(float64(maxInt(displayWidth(content), 1)))
+		totalWeight += weights[i]
+	}
+
+	extra := portraitTableTotalWidthCM - totalMin
+	if extra < 0 || totalWeight == 0 {
+		extra = 0
+	}
+
+	widths := make([]string, len(labels))
+	for i := range labels {
+		width := minWidths[i] + extra*weights[i]/totalWeight
+		widths[i] = fmt.Sprintf("%.2fcm", width)
+	}
+	return fmt.Sprintf("(%s)", strings.Join(widths, ", "))
 }
 
 func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSection) {
@@ -653,7 +699,7 @@ func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSect
 	sb.WriteString("    stroke: 0.5pt,\n")
 	sb.WriteString("    align: center + horizon,\n")
 	sb.WriteString(fmt.Sprintf("    [学习任务], table.cell(colspan: 5)[%s],\n", typst.EscapeContent(fields["学习任务"])))
-	sb.WriteString(fmt.Sprintf("    [课时], table.cell(colspan: 2)[%s], [起止日期], table.cell(colspan: 2)[%s],\n", typst.EscapeContent(fields["课时"]), typst.EscapeContent(fields["起止日期"])))
+	sb.WriteString(fmt.Sprintf("    [课时], table.cell(colspan: 2)[%s], [起止日期], table.cell(colspan: 2)[%s],\n", typst.EscapeContent(fields["课时"]), typst.EscapeContent(formatLearningTaskDate(fields["起止日期"]))))
 
 	analysisRows := []struct {
 		Title   string
@@ -671,7 +717,7 @@ func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSect
 	}
 
 	sb.WriteString("    table.cell(colspan: 6)[*五、学习资源*],\n")
-	sb.WriteString(fmt.Sprintf("    table.cell(colspan: 2, align: left + horizon)[工量具、设备：%s], table.cell(colspan: 3, align: left + horizon)[耗材：%s], align(left + horizon)[其它：%s],\n", typst.EscapeContent(resources["工量具、设备"]), typst.EscapeContent(resources["耗材"]), typst.EscapeContent(resources["其它"])))
+	sb.WriteString(fmt.Sprintf("    table.cell(colspan: 6, inset: 0pt, stroke: none)[#table(\n      columns: %s,\n      stroke: 0.5pt,\n      align: left + horizon,\n      inset: 3pt,\n      [工量具、设备：%s], [耗材：%s], [其它：%s],\n    )],\n", resourceColumnSpec(resources), typst.EscapeContent(resources["工量具、设备"]), typst.EscapeContent(resources["耗材"]), typst.EscapeContent(resources["其它"])))
 	sb.WriteString("  )\n")
 	sb.WriteString("]\n")
 }
@@ -693,7 +739,7 @@ func renderEvaluationSection(sb *strings.Builder, section DocumentSection) {
 		if i < len(rows) {
 			row = rows[i]
 		}
-		sb.WriteString(fmt.Sprintf("    [%d], align(left + horizon)[%s], align(left + horizon)[%s], [%s],\n", i+1, typst.EscapeContent(row.Project), formatMultilineContent(row.Details), typst.EscapeContent(row.Method)))
+		sb.WriteString(fmt.Sprintf("    [%d], align(center + horizon)[%s], align(center + horizon)[%s], [%s],\n", i+1, typst.EscapeContent(row.Project), formatMultilineContent(row.Details), typst.EscapeContent(row.Method)))
 	}
 
 	sb.WriteString(fmt.Sprintf("    [小结], table.cell(colspan: 3, align: left + horizon)[%s],\n", formatMultilineContent(summary)))
