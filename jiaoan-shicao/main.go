@@ -62,7 +62,7 @@ const portraitPageSetup = `#set page(
 const coverPageSetup = `#set page(
   paper: "a4",
   flipped: false,
-  margin: (top: 2.52cm, bottom: 0cm, left: 2.38cm, right: 2.41cm)
+  margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)
 )
 `
 
@@ -76,14 +76,11 @@ const landscapePageSetup = `#set page(
 const portraitTableTotalWidthCM = 16.34
 const activityTableTotalWidthCM = 25.04
 const sectionHeadingGap = "10pt"
-const coverTitleTopGap = "4.33cm"
-const coverTitleIndent = "4.50cm"
-const coverFieldTopGap = "7.20cm"
-const coverFieldIndent = "1.44cm"
-const coverLabelColumnWidth = "2.75cm"
-const coverColonColumnWidth = "0.35cm"
-const coverValueUnderlineWidth = "11.15cm"
-const coverFieldGap = "0.72cm"
+const coverTitleTopGap = "3.20cm"
+const coverFieldTopGap = "3.00cm"
+const coverLabelColumnWidth = "4.00cm"
+const coverValueColumnWidth = "9.00cm"
+const coverFieldRowHeight = "1.50cm"
 
 var chineseYearPattern = regexp.MustCompile(`\d{4}\s*年\s*`)
 
@@ -608,25 +605,28 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 	fieldOrder := []string{"课程名称", "课程属性", "教材名称", "教学班级", "计划总课时", "教师姓名", "使用时间"}
 
 	sb.WriteString(fmt.Sprintf("\n#v(%s)\n", coverTitleTopGap))
-	sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 21.5pt)[%s]\n", coverTitleIndent, typst.EscapeContent(title)))
+	sb.WriteString(fmt.Sprintf("#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[%s]]\n", typst.EscapeContent(title)))
 	sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldTopGap))
-	sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 14pt)[#table(\n", coverFieldIndent))
-	sb.WriteString(fmt.Sprintf("  columns: (%s, %s, %s),\n", coverLabelColumnWidth, coverColonColumnWidth, coverValueUnderlineWidth))
-	sb.WriteString("  stroke: none,\n")
-	sb.WriteString("  align: (center + horizon, center + horizon, center + horizon),\n")
+	sb.WriteString("#align(center)[\n")
+	sb.WriteString("  #table(\n")
+	sb.WriteString(fmt.Sprintf("  columns: (%s, %s),\n", coverLabelColumnWidth, coverValueColumnWidth))
+	sb.WriteString("  stroke: 0.5pt,\n")
+	sb.WriteString("  align: center + horizon,\n")
 	sb.WriteString("  inset: 0pt,\n")
 
-	for index, key := range fieldOrder {
+	for _, key := range fieldOrder {
 		value := fm.fieldValue(key)
 		if key == "课程属性" {
 			value = renderCourseAttribute(value)
 		}
-		sb.WriteString(fmt.Sprintf("  [#text(tracking: 0.08em)[%s]], [：], table.cell(stroke: (bottom: 0.5pt), align: center + horizon)[%s],\n", typst.EscapeContent(key), typst.EscapeContent(value)))
-		if index < len(fieldOrder)-1 {
-			sb.WriteString(fmt.Sprintf("  table.cell(colspan: 3)[#v(%s)],\n", coverFieldGap))
+		valueSize := "14pt"
+		if key == "课程名称" {
+			valueSize = "16pt"
 		}
+		sb.WriteString(fmt.Sprintf("  table.cell[#box(width: 100%%, height: %s)[#align(center + horizon)[#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[%s：]]]], table.cell[#box(width: 100%%, height: %s)[#align(center + horizon)[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]]],\n", coverFieldRowHeight, typst.EscapeContent(key), coverFieldRowHeight, valueSize, typst.EscapeContent(value)))
 	}
-	sb.WriteString(")]\n")
+	sb.WriteString("  )\n")
+	sb.WriteString("]\n")
 }
 
 func renderCourseAttribute(value string) string {

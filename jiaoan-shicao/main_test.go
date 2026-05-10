@@ -275,18 +275,17 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 	output := convertMarkdown(exampleMD)
 
 	for _, want := range []string{
-		"margin: (top: 2.52cm, bottom: 0cm, left: 2.38cm, right: 2.41cm)",
-		"#v(4.33cm)",
-		"#h(4.50cm)#text(font: FONT_SONG, size: 21.5pt)[教学设计方案（二）]",
-		"#v(7.20cm)",
-		"#h(1.44cm)#text(font: FONT_SONG, size: 14pt)[#table(",
-		"columns: (2.75cm, 0.35cm, 11.15cm)",
-		"[#text(tracking: 0.08em)[课程名称]], [：]",
-		"table.cell(stroke: (bottom: 0.5pt), align: center + horizon)",
-		"table.cell(colspan: 3)[#v(0.72cm)]",
+		"margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)",
+		"#v(3.20cm)",
+		"#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[教学设计方案（二）]]",
+		"#v(3.00cm)",
+		"columns: (4.00cm, 9.00cm)",
+		"stroke: 0.5pt",
+		"table.cell[#box(width: 100%, height: 1.50cm)[#align(center + horizon)[#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[课程名称：]]]]",
+		"table.cell[#box(width: 100%, height: 1.50cm)[#align(center + horizon)[#text(font: FONT_SONG, size: 16pt, weight: \"bold\")[电工基本技能训练]]]]",
 	} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("expected Word-sized cover output to contain %q", want)
+			t.Fatalf("expected reference-style cover output to contain %q", want)
 		}
 	}
 	coverStart := strings.Index(output, "教学设计方案（二）")
@@ -295,8 +294,8 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		t.Fatal("expected cover before learning-analysis section")
 	}
 	coverOutput := output[coverStart:analysisStart]
-	if !strings.Contains(coverOutput, "[：]") {
-		t.Fatal("expected cover table to keep colons in their own alignment column")
+	if strings.Contains(coverOutput, "stroke: (bottom: 0.5pt)") {
+		t.Fatal("expected reference-style cover table to use full borders, not underline-only cells")
 	}
 }
 
@@ -515,7 +514,8 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 	for _, want := range []string{
 		"flipped: false",
 		"flipped: true",
-		"stroke: (bottom: 0.5pt)",
+		"columns: (4.00cm, 9.00cm)",
+		"box(width: 100%, height: 1.50cm)",
 		"2026 年 5 月 12 日 —— 2026 年 5 月 15 日",
 		"#set page(",
 	} {
