@@ -271,6 +271,33 @@ course_name: 'A #set page()] \'
 	}
 }
 
+func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+
+	for _, want := range []string{
+		"margin: (top: 2.52cm, bottom: 0cm, left: 2.38cm, right: 2.41cm)",
+		"#v(4.33cm)",
+		"#h(4.50cm)#text(font: FONT_SONG, size: 21.5pt)[教学设计方案（二）]",
+		"#v(7.20cm)",
+		"#h(1.44cm)#text(font: FONT_SONG, size: 14pt)[课程名称：]",
+		"width: 11.75cm",
+		"#v(0.72cm)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected Word-sized cover output to contain %q", want)
+		}
+	}
+	coverStart := strings.Index(output, "教学设计方案（二）")
+	analysisStart := strings.Index(output, "#section-title[学习任务分析]")
+	if coverStart < 0 || analysisStart < coverStart {
+		t.Fatal("expected cover before learning-analysis section")
+	}
+	coverOutput := output[coverStart:analysisStart]
+	if strings.Contains(coverOutput, "table.cell") {
+		t.Fatal("expected Word-sized cover to render as fixed paragraphs, not a table")
+	}
+}
+
 func TestLearningTaskAnalysisFieldsBlocksResourcesAndEscaping(t *testing.T) {
 	output := convertMarkdown(`## 学习任务分析
 
@@ -464,7 +491,6 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 		"flipped: false",
 		"flipped: true",
 		"stroke: (bottom: 0.5pt)",
-		"table.cell(stroke: (bottom: 0.5pt))",
 		"2026 年 5 月 12 日 —— 2026 年 5 月 15 日",
 		"#set page(",
 	} {

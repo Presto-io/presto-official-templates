@@ -58,6 +58,13 @@ const portraitPageSetup = `#set page(
 )
 `
 
+const coverPageSetup = `#set page(
+  paper: "a4",
+  flipped: false,
+  margin: (top: 2.52cm, bottom: 0cm, left: 2.38cm, right: 2.41cm)
+)
+`
+
 const landscapePageSetup = `#set page(
   paper: "a4",
   flipped: true,
@@ -68,6 +75,12 @@ const landscapePageSetup = `#set page(
 const portraitTableTotalWidthCM = 16.34
 const activityTableTotalWidthCM = 25.04
 const sectionHeadingGap = "10pt"
+const coverTitleTopGap = "4.33cm"
+const coverTitleIndent = "4.50cm"
+const coverFieldTopGap = "7.20cm"
+const coverFieldIndent = "1.44cm"
+const coverValueUnderlineWidth = "11.75cm"
+const coverFieldGap = "0.72cm"
 
 // H5Block 存储五级标题及其内容
 type H5Block struct {
@@ -382,14 +395,17 @@ func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSecti
 		if layout == currentPageLayout {
 			return
 		}
-		if layout == "landscape" {
+		switch layout {
+		case "cover":
+			sb.WriteString(coverPageSetup)
+		case "landscape":
 			sb.WriteString(landscapePageSetup)
-		} else {
+		default:
 			sb.WriteString(portraitPageSetup)
 		}
 		currentPageLayout = layout
 	}
-	writePageSetup("portrait")
+	writePageSetup("cover")
 
 	coverRendered := false
 	if fm.hasCoverFields() {
@@ -405,7 +421,9 @@ func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSecti
 		if sectionIdx > 0 || coverRendered {
 			sb.WriteString("\n#pagebreak()\n\n")
 		}
-		if kind == "activity" {
+		if kind == "cover" {
+			writePageSetup("cover")
+		} else if kind == "activity" {
 			writePageSetup("landscape")
 		} else {
 			writePageSetup("portrait")
@@ -584,26 +602,22 @@ func frontMatterFromSection(section DocumentSection) lessonFrontMatter {
 func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string) {
 	fieldOrder := []string{"课程名称", "课程属性", "教材名称", "教学班级", "计划总课时", "教师姓名", "使用时间"}
 
-	sb.WriteString("\n#v(28pt)\n")
-	sb.WriteString(fmt.Sprintf("#align(center)[#text(font: FONT_SONG, size: zh(2))[%s]]\n", typst.EscapeContent(title)))
-	sb.WriteString("#v(54pt)\n")
-	sb.WriteString("#align(center)[\n")
-	sb.WriteString("  #table(\n")
-	sb.WriteString("    columns: (3.4cm, 11.6cm),\n")
-	sb.WriteString("    stroke: none,\n")
-	sb.WriteString("    align: (right + horizon, left + horizon),\n")
+	sb.WriteString(fmt.Sprintf("\n#v(%s)\n", coverTitleTopGap))
+	sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 21.5pt)[%s]\n", coverTitleIndent, typst.EscapeContent(title)))
+	sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldTopGap))
 
-	for _, key := range fieldOrder {
+	for index, key := range fieldOrder {
 		value := fm.fieldValue(key)
 		if key == "课程属性" {
 			value = renderCourseAttribute(value)
+			sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 14pt)[%s：%s]\n", coverFieldIndent, typst.EscapeContent(key), typst.EscapeContent(value)))
+		} else {
+			sb.WriteString(fmt.Sprintf("#h(%s)#text(font: FONT_SONG, size: 14pt)[%s：]#box(width: %s, inset: (left: 0.10cm, right: 0.10cm, bottom: 1pt), stroke: (bottom: 0.5pt))[#text(font: FONT_SONG, size: 14pt)[%s]]\n", coverFieldIndent, typst.EscapeContent(key), coverValueUnderlineWidth, typst.EscapeContent(value)))
 		}
-		sb.WriteString(fmt.Sprintf("    [%s：], table.cell(stroke: (bottom: 0.5pt))[%s],\n", typst.EscapeContent(key), typst.EscapeContent(value)))
-		sb.WriteString("    table.cell(colspan: 2)[#v(8pt)],\n")
+		if index < len(fieldOrder)-1 {
+			sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldGap))
+		}
 	}
-
-	sb.WriteString("  )\n")
-	sb.WriteString("]\n")
 }
 
 func renderCourseAttribute(value string) string {
