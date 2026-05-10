@@ -36,12 +36,6 @@ const preamble = `// 中文字号转换函数
 #let FONT_KAI = ("STKaiti") // 楷体
 #let FONT_SONG = ("STSong") // 宋体
 
-#set page(
-  paper: "a4",
-  flipped: false,
-  margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)
-)
-
 #set text(
   lang: "zh",
   font: FONT_SONG,
@@ -57,7 +51,22 @@ const preamble = `// 中文字号转换函数
 ]
 `
 
-const tableTotalWidthCM = 16.34
+const portraitPageSetup = `#set page(
+  paper: "a4",
+  flipped: false,
+  margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)
+)
+`
+
+const landscapePageSetup = `#set page(
+  paper: "a4",
+  flipped: true,
+  margin: (top: 2.54cm, bottom: 2.08cm, left: 2.58cm, right: 2.54cm)
+)
+`
+
+const portraitTableTotalWidthCM = 16.34
+const activityTableTotalWidthCM = 25.04
 const sectionHeadingGap = "10pt"
 
 // H5Block 存储五级标题及其内容
@@ -368,6 +377,19 @@ func generateTypst(sections []DocumentSection) string {
 func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSection) string {
 	var sb strings.Builder
 	sb.WriteString(preamble)
+	currentPageLayout := ""
+	writePageSetup := func(layout string) {
+		if layout == currentPageLayout {
+			return
+		}
+		if layout == "landscape" {
+			sb.WriteString(landscapePageSetup)
+		} else {
+			sb.WriteString(portraitPageSetup)
+		}
+		currentPageLayout = layout
+	}
+	writePageSetup("portrait")
 
 	coverRendered := false
 	if fm.hasCoverFields() {
@@ -382,6 +404,11 @@ func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSecti
 		}
 		if sectionIdx > 0 || coverRendered {
 			sb.WriteString("\n#pagebreak()\n\n")
+		}
+		if kind == "activity" {
+			writePageSetup("landscape")
+		} else {
+			writePageSetup("portrait")
 		}
 		switch kind {
 		case "cover":
@@ -1044,7 +1071,7 @@ func tableColumnWidthsCM(tables []Table) []float64 {
 		headerMinWidthCM(headerMetrics[5], 0.10),
 	}
 
-	remainingWidth := tableTotalWidthCM
+	remainingWidth := activityTableTotalWidthCM
 	for _, width := range widths {
 		remainingWidth -= width
 	}

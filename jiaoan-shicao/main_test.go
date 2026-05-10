@@ -81,8 +81,8 @@ func TestTableColumnWidthsPreserveHeaderRow(t *testing.T) {
 		total += width
 	}
 
-	if total < tableTotalWidthCM-0.01 || total > tableTotalWidthCM+0.01 {
-		t.Fatalf("expected total width to match table width %.2fcm, got %.2fcm", tableTotalWidthCM, total)
+	if total < activityTableTotalWidthCM-0.01 || total > activityTableTotalWidthCM+0.01 {
+		t.Fatalf("expected total width to match activity table width %.2fcm, got %.2fcm", activityTableTotalWidthCM, total)
 	}
 	if widths[5] >= widths[1] || widths[5] >= widths[2] || widths[5] >= widths[3] {
 		t.Fatalf("expected 课时分配 column to stay narrower than main text columns, got widths %v", widths)
@@ -462,6 +462,7 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 
 	for _, want := range []string{
 		"flipped: false",
+		"flipped: true",
 		"stroke: (bottom: 0.5pt)",
 		"table.cell(stroke: (bottom: 0.5pt))",
 		"2026 年 5 月 12 日 —— 2026 年 5 月 15 日",
@@ -470,6 +471,40 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected embedded example release format signal %q", want)
 		}
+	}
+}
+
+func TestEmbeddedExampleUsesLandscapeOnlyForActivitySection(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+
+	coverIdx := strings.Index(output, "教学设计方案（二）")
+	analysisIdx := strings.Index(output, "#section-title[学习任务分析]")
+	activityIdx := strings.Index(output, "#section-title[教学活动设计")
+	evaluationIdx := strings.Index(output, "#section-title[学业评价]")
+	if !(coverIdx >= 0 && analysisIdx > coverIdx && activityIdx > analysisIdx && evaluationIdx > activityIdx) {
+		t.Fatalf("expected cover < analysis < activity < evaluation, got %d %d %d %d", coverIdx, analysisIdx, activityIdx, evaluationIdx)
+	}
+
+	landscapeIdx := strings.LastIndex(output[:activityIdx], "flipped: true")
+	if landscapeIdx < 0 {
+		t.Fatal("expected generated Typst to switch to landscape before the activity section")
+	}
+	if portraitIdx := strings.LastIndex(output[:activityIdx], "flipped: false"); portraitIdx < 0 || portraitIdx > landscapeIdx {
+		t.Fatal("expected portrait layout before the landscape activity switch")
+	}
+	if portraitAfterActivity := strings.Index(output[activityIdx:evaluationIdx], "flipped: false"); portraitAfterActivity < 0 {
+		t.Fatal("expected generated Typst to switch back to portrait before evaluation")
+	}
+	widths := tableColumnWidthsCM([]Table{})
+	total := 0.0
+	for _, width := range widths {
+		total += width
+	}
+	if total < activityTableTotalWidthCM-0.01 || total > activityTableTotalWidthCM+0.01 {
+		t.Fatalf("expected activity table widths to total %.2fcm, got %.2fcm", activityTableTotalWidthCM, total)
+	}
+	if activityTableTotalWidthCM <= portraitTableTotalWidthCM {
+		t.Fatal("expected activity tables to use a wider landscape width than portrait sections")
 	}
 }
 
