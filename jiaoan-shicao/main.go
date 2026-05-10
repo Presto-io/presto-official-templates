@@ -78,9 +78,10 @@ const activityTableTotalWidthCM = 25.04
 const sectionHeadingGap = "10pt"
 const coverTitleTopGap = "3.20cm"
 const coverFieldTopGap = "3.00cm"
-const coverLabelColumnWidth = "4.00cm"
-const coverValueColumnWidth = "9.00cm"
+const coverTableTotalWidth = "13.00cm"
 const coverFieldRowHeight = "1.50cm"
+const coverFieldBottomInset = "0.16cm"
+const coverFieldFontSize = "zh(4)"
 
 var chineseYearPattern = regexp.MustCompile(`\d{4}\s*年\s*`)
 
@@ -608,8 +609,9 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 	sb.WriteString(fmt.Sprintf("#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[%s]]\n", typst.EscapeContent(title)))
 	sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldTopGap))
 	sb.WriteString("#align(center)[\n")
+	sb.WriteString(fmt.Sprintf("#box(width: %s)[\n", coverTableTotalWidth))
 	sb.WriteString("  #table(\n")
-	sb.WriteString(fmt.Sprintf("  columns: (%s, %s),\n", coverLabelColumnWidth, coverValueColumnWidth))
+	sb.WriteString(fmt.Sprintf("  columns: (%s, 1fr),\n", coverLabelColumnWidth(fieldOrder)))
 	sb.WriteString("  stroke: none,\n")
 	sb.WriteString("  align: bottom,\n")
 	sb.WriteString("  inset: 0pt,\n")
@@ -619,15 +621,21 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 		if key == "课程属性" {
 			value = renderCourseAttribute(value)
 		}
-		valueSize := "14pt"
-		if key == "课程名称" {
-			valueSize = "16pt"
-		}
 		sb.WriteString(fmt.Sprintf("  // cover-label: %s\n", typst.EscapeContent(key)))
-		sb.WriteString(fmt.Sprintf("  table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s)[#align(bottom)[%s]]], table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s, stroke: (bottom: 0.5pt), inset: 0pt)[#align(center + bottom)[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]]],\n", coverFieldRowHeight, coverLabelContent(key), coverFieldRowHeight, valueSize, typst.EscapeContent(value)))
+		sb.WriteString(fmt.Sprintf("  table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s, inset: (bottom: %s))[#align(bottom)[%s]]], table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s, stroke: (bottom: 0.5pt), inset: (bottom: %s))[#align(center + bottom)[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]]],\n", coverFieldRowHeight, coverFieldBottomInset, coverLabelContent(key), coverFieldRowHeight, coverFieldBottomInset, coverFieldFontSize, typst.EscapeContent(value)))
 	}
 	sb.WriteString("  )\n")
 	sb.WriteString("]\n")
+	sb.WriteString("]\n")
+}
+
+func coverLabelColumnWidth(labels []string) string {
+	maxWidth := 0
+	for _, label := range labels {
+		maxWidth = maxInt(maxWidth, displayWidth(label+"："))
+	}
+	widthCM := float64(maxWidth)*0.28 + 0.06
+	return fmt.Sprintf("%.2fcm", widthCM)
 }
 
 func coverLabelContent(label string) string {
@@ -636,7 +644,7 @@ func coverLabelContent(label string) string {
 		return ""
 	}
 	if len(runes) == 1 {
-		return fmt.Sprintf("#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[%s]", typst.EscapeContent(string(runes[0])))
+		return fmt.Sprintf("#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]", coverFieldFontSize, typst.EscapeContent(string(runes[0])))
 	}
 
 	columns := make([]string, 0, len(runes)*2-1)
@@ -647,7 +655,7 @@ func coverLabelContent(label string) string {
 			cells = append(cells, "[]")
 		}
 		columns = append(columns, "auto")
-		cells = append(cells, fmt.Sprintf("[#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[%s]]", typst.EscapeContent(string(r))))
+		cells = append(cells, fmt.Sprintf("[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]", coverFieldFontSize, typst.EscapeContent(string(r))))
 	}
 
 	return fmt.Sprintf("#box(width: 100%%)[#grid(columns: (%s), column-gutter: 0pt, %s)]", strings.Join(columns, ", "), strings.Join(cells, ", "))

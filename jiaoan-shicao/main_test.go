@@ -279,12 +279,13 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		"#v(3.20cm)",
 		"#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[教学设计方案（二）]]",
 		"#v(3.00cm)",
-		"columns: (4.00cm, 9.00cm)",
+		"#box(width: 13.00cm)",
+		"columns: (3.42cm, 1fr)",
 		"stroke: none",
-		"table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%, height: 1.50cm)[#align(bottom)",
+		"table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%, height: 1.50cm, inset: (bottom: 0.16cm))[#align(bottom)",
 		"#grid(columns: (auto, 1fr, auto, 1fr, auto, 1fr, auto, 1fr, auto)",
-		"table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%, height: 1.50cm, stroke: (bottom: 0.5pt), inset: 0pt)",
-		"#align(center + bottom)[#text(font: FONT_SONG, size: 16pt, weight: \"bold\")[电工基本技能训练]]",
+		"table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%, height: 1.50cm, stroke: (bottom: 0.5pt), inset: (bottom: 0.16cm))",
+		"#align(center + bottom)[#text(font: FONT_SONG, size: zh(4), weight: \"bold\")[电工基本技能训练]]",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected reference-style cover output to contain %q", want)
@@ -516,8 +517,9 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 	for _, want := range []string{
 		"flipped: false",
 		"flipped: true",
-		"columns: (4.00cm, 9.00cm)",
-		"box(width: 100%, height: 1.50cm)",
+		"#box(width: 13.00cm)",
+		"columns: (3.42cm, 1fr)",
+		"box(width: 100%, height: 1.50cm, inset: (bottom: 0.16cm))",
 		"2026 年 5 月 12 日 —— 2026 年 5 月 15 日",
 		"#set page(",
 	} {
