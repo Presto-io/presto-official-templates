@@ -280,9 +280,11 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		"#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[教学设计方案（二）]]",
 		"#v(3.00cm)",
 		"columns: (4.00cm, 9.00cm)",
-		"stroke: 0.5pt",
-		"table.cell[#box(width: 100%, height: 1.50cm)[#align(center + horizon)[#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[课程名称：]]]]",
-		"table.cell[#box(width: 100%, height: 1.50cm)[#align(center + horizon)[#text(font: FONT_SONG, size: 16pt, weight: \"bold\")[电工基本技能训练]]]]",
+		"stroke: none",
+		"table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%, height: 1.50cm)[#align(bottom)",
+		"#grid(columns: (auto, 1fr, auto, 1fr, auto, 1fr, auto, 1fr, auto)",
+		"table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%, height: 1.50cm, stroke: (bottom: 0.5pt), inset: 0pt)",
+		"#align(center + bottom)[#text(font: FONT_SONG, size: 16pt, weight: \"bold\")[电工基本技能训练]]",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected reference-style cover output to contain %q", want)
@@ -294,8 +296,8 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		t.Fatal("expected cover before learning-analysis section")
 	}
 	coverOutput := output[coverStart:analysisStart]
-	if strings.Contains(coverOutput, "stroke: (bottom: 0.5pt)") {
-		t.Fatal("expected reference-style cover table to use full borders, not underline-only cells")
+	if strings.Contains(coverOutput, "table.cell(stroke: (bottom: 0.5pt)") {
+		t.Fatal("expected reference-style cover table cells to zero borders and draw underlines in content boxes")
 	}
 }
 

@@ -610,8 +610,8 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 	sb.WriteString("#align(center)[\n")
 	sb.WriteString("  #table(\n")
 	sb.WriteString(fmt.Sprintf("  columns: (%s, %s),\n", coverLabelColumnWidth, coverValueColumnWidth))
-	sb.WriteString("  stroke: 0.5pt,\n")
-	sb.WriteString("  align: center + horizon,\n")
+	sb.WriteString("  stroke: none,\n")
+	sb.WriteString("  align: bottom,\n")
 	sb.WriteString("  inset: 0pt,\n")
 
 	for _, key := range fieldOrder {
@@ -623,10 +623,34 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 		if key == "课程名称" {
 			valueSize = "16pt"
 		}
-		sb.WriteString(fmt.Sprintf("  table.cell[#box(width: 100%%, height: %s)[#align(center + horizon)[#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[%s：]]]], table.cell[#box(width: 100%%, height: %s)[#align(center + horizon)[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]]],\n", coverFieldRowHeight, typst.EscapeContent(key), coverFieldRowHeight, valueSize, typst.EscapeContent(value)))
+		sb.WriteString(fmt.Sprintf("  // cover-label: %s\n", typst.EscapeContent(key)))
+		sb.WriteString(fmt.Sprintf("  table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s)[#align(bottom)[%s]]], table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s, stroke: (bottom: 0.5pt), inset: 0pt)[#align(center + bottom)[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]]],\n", coverFieldRowHeight, coverLabelContent(key), coverFieldRowHeight, valueSize, typst.EscapeContent(value)))
 	}
 	sb.WriteString("  )\n")
 	sb.WriteString("]\n")
+}
+
+func coverLabelContent(label string) string {
+	runes := []rune(label + "：")
+	if len(runes) == 0 {
+		return ""
+	}
+	if len(runes) == 1 {
+		return fmt.Sprintf("#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[%s]", typst.EscapeContent(string(runes[0])))
+	}
+
+	columns := make([]string, 0, len(runes)*2-1)
+	cells := make([]string, 0, len(runes)*2-1)
+	for i, r := range runes {
+		if i > 0 {
+			columns = append(columns, "1fr")
+			cells = append(cells, "[]")
+		}
+		columns = append(columns, "auto")
+		cells = append(cells, fmt.Sprintf("[#text(font: FONT_SONG, size: 14pt, weight: \"bold\")[%s]]", typst.EscapeContent(string(r))))
+	}
+
+	return fmt.Sprintf("#box(width: 100%%)[#grid(columns: (%s), column-gutter: 0pt, %s)]", strings.Join(columns, ", "), strings.Join(cells, ", "))
 }
 
 func renderCourseAttribute(value string) string {
