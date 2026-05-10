@@ -278,7 +278,7 @@ func TestRenderCoverUsesWordTemplateMeasurements(t *testing.T) {
 		"margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)",
 		"#v(3.20cm)",
 		"#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[教学设计方案（二）]]",
-		"#v(3.25cm)",
+		"#v(5.25cm)",
 		"#context {",
 		"let cover-label-width = calc.max(",
 		"measure(text(font: FONT_SONG, size: zh(4), weight: \"bold\")[计划总课时：]).width",
