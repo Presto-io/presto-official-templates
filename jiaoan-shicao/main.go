@@ -77,8 +77,7 @@ const portraitTableTotalWidthCM = 16.34
 const activityTableTotalWidthCM = 25.04
 const sectionHeadingGap = "10pt"
 const coverTitleTopGap = "3.20cm"
-const coverFieldTopGap = "3.00cm"
-const coverTableTotalWidth = "13.00cm"
+const coverFieldTopGap = "3.25cm"
 const coverFieldRowHeight = "1.50cm"
 const coverFieldBottomInset = "0.16cm"
 const coverFieldFontSize = "zh(4)"
@@ -609,9 +608,8 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 	sb.WriteString(fmt.Sprintf("#align(center)[#text(font: FONT_SONG, size: 22pt, weight: \"bold\")[%s]]\n", typst.EscapeContent(title)))
 	sb.WriteString(fmt.Sprintf("#v(%s)\n", coverFieldTopGap))
 	sb.WriteString("#align(center)[\n")
-	sb.WriteString(fmt.Sprintf("#box(width: %s)[\n", coverTableTotalWidth))
 	sb.WriteString("  #table(\n")
-	sb.WriteString(fmt.Sprintf("  columns: (%s, 1fr),\n", coverLabelColumnWidth(fieldOrder)))
+	sb.WriteString("  columns: (auto, auto),\n")
 	sb.WriteString("  stroke: none,\n")
 	sb.WriteString("  align: bottom,\n")
 	sb.WriteString("  inset: 0pt,\n")
@@ -622,43 +620,10 @@ func renderCoverSection(sb *strings.Builder, fm lessonFrontMatter, title string)
 			value = renderCourseAttribute(value)
 		}
 		sb.WriteString(fmt.Sprintf("  // cover-label: %s\n", typst.EscapeContent(key)))
-		sb.WriteString(fmt.Sprintf("  table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s, inset: (bottom: %s))[#align(bottom)[%s]]], table.cell(stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(width: 100%%, height: %s, stroke: (bottom: 0.5pt), inset: (bottom: %s))[#align(center + bottom)[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]]],\n", coverFieldRowHeight, coverFieldBottomInset, coverLabelContent(key), coverFieldRowHeight, coverFieldBottomInset, coverFieldFontSize, typst.EscapeContent(value)))
+		sb.WriteString(fmt.Sprintf("  table.cell(align: right + bottom, stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(height: %s, inset: (bottom: %s))[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s：]]], table.cell(align: center + bottom, stroke: (left: 0pt, right: 0pt, top: 0pt, bottom: 0pt))[#box(height: %s, stroke: (bottom: 0.5pt), inset: (x: 0.45cm, bottom: %s))[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]],\n", coverFieldRowHeight, coverFieldBottomInset, coverFieldFontSize, typst.EscapeContent(key), coverFieldRowHeight, coverFieldBottomInset, coverFieldFontSize, typst.EscapeContent(value)))
 	}
 	sb.WriteString("  )\n")
 	sb.WriteString("]\n")
-	sb.WriteString("]\n")
-}
-
-func coverLabelColumnWidth(labels []string) string {
-	maxWidth := 0
-	for _, label := range labels {
-		maxWidth = maxInt(maxWidth, displayWidth(label+"："))
-	}
-	widthCM := float64(maxWidth)*0.28 + 0.06
-	return fmt.Sprintf("%.2fcm", widthCM)
-}
-
-func coverLabelContent(label string) string {
-	runes := []rune(label + "：")
-	if len(runes) == 0 {
-		return ""
-	}
-	if len(runes) == 1 {
-		return fmt.Sprintf("#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]", coverFieldFontSize, typst.EscapeContent(string(runes[0])))
-	}
-
-	columns := make([]string, 0, len(runes)*2-1)
-	cells := make([]string, 0, len(runes)*2-1)
-	for i, r := range runes {
-		if i > 0 {
-			columns = append(columns, "1fr")
-			cells = append(cells, "[]")
-		}
-		columns = append(columns, "auto")
-		cells = append(cells, fmt.Sprintf("[#text(font: FONT_SONG, size: %s, weight: \"bold\")[%s]]", coverFieldFontSize, typst.EscapeContent(string(r))))
-	}
-
-	return fmt.Sprintf("#box(width: 100%%)[#grid(columns: (%s), column-gutter: 0pt, %s)]", strings.Join(columns, ", "), strings.Join(cells, ", "))
 }
 
 func renderCourseAttribute(value string) string {
