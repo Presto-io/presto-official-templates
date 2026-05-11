@@ -169,7 +169,7 @@ func TestScheduleConsumesWorkdaysOnly(t *testing.T) {
 		{Date: "2025-09-03", Workday: true},
 	}
 	got := schedulePlan(oneRowPlan("跨日", 8), fm, days).Tasks[0].Activities[0].Rows[0]
-	assertEqual(t, got.WeekdayDisplay, "1、3")
+	assertEqual(t, got.WeekdayDisplay, "1 3")
 }
 
 func TestInsufficientExternalCalendarExtendsFromLastDate(t *testing.T) {
@@ -177,7 +177,7 @@ func TestInsufficientExternalCalendarExtendsFromLastDate(t *testing.T) {
 	fm.DailyHours = 4
 	days := []calendarDay{{Date: "2025-09-01", Workday: true}}
 	got := schedulePlan(oneRowPlan("补足", 12), fm, days).Tasks[0].Activities[0].Rows[0]
-	assertEqual(t, got.WeekdayDisplay, "1、2、3")
+	assertEqual(t, got.WeekdayDisplay, "1 2 3")
 }
 
 func TestSingleContentRowSpanningWeeksStaysOneRow(t *testing.T) {
@@ -192,7 +192,7 @@ func TestSingleContentRowSpanningWeeksStaysOneRow(t *testing.T) {
 	got := schedulePlan(oneRowPlan("跨周综合训练", 12), fm, days).Tasks[0].Activities[0].Rows[0]
 	assertEqual(t, got.HourDisplay, "12H")
 	assertEqual(t, got.WeekDisplay, "1、2")
-	assertEqual(t, got.WeekdayDisplay, "5、1、2")
+	assertEqual(t, got.WeekdayDisplay, "5 1 2")
 }
 
 func TestWeekendWorkdayUsesRealWeekday(t *testing.T) {
@@ -204,7 +204,7 @@ func TestWeekendWorkdayUsesRealWeekday(t *testing.T) {
 
 func TestRenderUsesPrototypePageAndTableConstants(t *testing.T) {
 	output := convertMarkdown(exampleMD)
-	for _, want := range []string{`paper: "a4"`, `flipped: false`, `margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)`, `columns: (3.0cm, 7.3cm, 1.6cm, 1.5cm, 1.5cm, 1.4cm)`} {
+	for _, want := range []string{`paper: "a4"`, `flipped: false`, `margin: (top: 2.54cm, bottom: 2.54cm, left: 2.8cm, right: 2.8cm)`, `columns: (3.15cm, 8.51cm, 1.12cm, 1.29cm, 1.27cm)`, `cell-pad = (x: 4.8pt, y: 4.8pt)`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output missing %q", want)
 		}
@@ -220,6 +220,18 @@ func TestRenderOutputsTitleMetadataAndSignature(t *testing.T) {
 	}
 }
 
+func TestSignaturePreparedByUsesTeacherName(t *testing.T) {
+	input := strings.Replace(withBody("## 任务\n\n### 环节\n\n内容-1\n"), `teacher_name: "张老师"`, `teacher_name: "授课教师甲"`, 1)
+	input = strings.Replace(input, `prepared_by: "张老师"`, `prepared_by: "制表人乙"`, 1)
+	output := convertMarkdown(input)
+	if !strings.Contains(output, "制表：授课教师甲") {
+		t.Fatal("signature should use teacher_name for prepared-by display")
+	}
+	if strings.Contains(output, "制表：制表人乙") {
+		t.Fatal("signature must not use prepared_by when teacher_name is present")
+	}
+}
+
 func TestRenderOutputsFirstTaskAndBodyHeaders(t *testing.T) {
 	output := convertMarkdown(exampleMD)
 	for _, want := range []string{"学习任务1名称：", "教学内容", "周次", "星期", "学时"} {
@@ -231,19 +243,21 @@ func TestRenderOutputsFirstTaskAndBodyHeaders(t *testing.T) {
 
 func TestRenderUsesColspanForTaskRows(t *testing.T) {
 	output := convertMarkdown(exampleMD)
-	if !strings.Contains(output, "table.cell(colspan: 2)[学习任务1名称：") || !strings.Contains(output, "table.cell(colspan: 2)[任务总学时]") {
-		t.Fatal("missing task colspan cells")
+	if !strings.Contains(output, "task-th[学习任务1名称：]") || !strings.Contains(output, "task-th[CA6140卧式车床电气控制线路安装与调试]") {
+		t.Fatal("missing bold task cells")
+	}
+	if !strings.Contains(output, "table.cell(colspan: 2, align: center + horizon, inset: cell-pad)[学时]") {
+		t.Fatal("missing task hours colspan cell")
 	}
 }
 
 func TestRenderUsesRowspanOnlyOnFirstActivityRow(t *testing.T) {
 	output := convertMarkdown(exampleMD)
-	want := "table.cell(rowspan: 3)[学习环节1名称：安技教育及旧知识回顾]"
-	if !strings.Contains(output, want) {
-		t.Fatalf("missing %q", want)
+	if strings.Contains(output, "table.cell(rowspan:") {
+		t.Fatal("approved visual prototype uses repeated activity cells, not rowspans")
 	}
-	if strings.Count(output, "学习环节1名称：安技教育及旧知识回顾") != 1 {
-		t.Fatal("activity label repeated")
+	if strings.Count(output, "学习环节1名称：安技教育及旧知识回顾") != 3 {
+		t.Fatal("activity label should repeat for each content row")
 	}
 }
 
@@ -252,14 +266,14 @@ func TestRenderMultipleTasksUseSeparatorWithoutRepeatingBodyHeader(t *testing.T)
 	if !strings.Contains(output, "学习任务2名称：") {
 		t.Fatal("missing second task")
 	}
-	if strings.Count(output, "[教学内容], [周次], [星期], [学时]") != 1 {
+	if strings.Count(output, "subth[教学内容]") != 1 {
 		t.Fatal("body header repeated")
 	}
 }
 
 func TestRenderContentRowsCarryScheduleCells(t *testing.T) {
 	output := convertMarkdown(exampleMD)
-	for _, want := range []string{"安技教育", "1H", "CA6140卧式车床主电路识读", "4H"} {
+	for _, want := range []string{"安技教育", "body-cell[1]", "CA6140卧式车床主电路识读", "body-cell[4]"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output missing %q", want)
 		}

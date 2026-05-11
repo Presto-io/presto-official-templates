@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -335,8 +334,8 @@ func scheduleRow(row contentRow, days []calendarDay, cursor int, remainingToday 
 	return scheduledRow{
 		Text:           row.Text,
 		Hours:          row.Hours,
-		WeekDisplay:    weeks.Join(),
-		WeekdayDisplay: weekdays.Join(),
+		WeekDisplay:    weeks.Join("、"),
+		WeekdayDisplay: weekdays.Join(" "),
 		HourDisplay:    fmt.Sprintf("%dH", row.Hours),
 	}, cursor, remainingToday
 }
@@ -374,8 +373,8 @@ func (s *orderedSet) Add(value string) {
 	}
 }
 
-func (s orderedSet) Join() string {
-	return strings.Join(s.values, "、")
+func (s orderedSet) Join(separator string) string {
+	return strings.Join(s.values, separator)
 }
 
 func parseISODate(value string) (time.Time, error) {
@@ -408,30 +407,45 @@ func weekdayNumber(day time.Time) int {
 }
 
 const rendererPreamble = `// jiaoan-jihua official template
-#import "@preview/pointless-size:0.1.2": zh
+#import "@preview/cuti:0.2.1": show-cn-fakebold
+#show: show-cn-fakebold
 
 #set page(
   paper: "a4",
   flipped: false,
-  margin: (top: 2.54cm, bottom: 2.54cm, left: 2.58cm, right: 2.08cm)
+  margin: (top: 2.54cm, bottom: 2.54cm, left: 2.8cm, right: 2.8cm)
 )
 
-#set text(lang: "zh", font: "STSong", size: zh(5))
+#set text(
+  lang: "zh",
+  font: ("STSong", "Noto Serif CJK SC", "Songti SC", "SimSun"),
+  size: 10.5pt,
+  hyphenate: false,
+)
 
-#let cell(body) = table.cell(inset: 4pt)[#body]
+#set par(justify: true, leading: 0.52em)
+
+#let cell-pad = (x: 4.8pt, y: 4.8pt)
+#let task-th(body) = table.cell(align: center + horizon, inset: cell-pad)[#text(weight: 700)[#body]]
+#let th(body) = table.cell(align: center + horizon, inset: cell-pad)[#body]
+#let subth(body) = table.cell(align: center + horizon, inset: cell-pad)[#body]
+#let body-cell(body) = table.cell(align: center + horizon, inset: cell-pad)[#body]
+#let content-cell(body) = table.cell(align: left + horizon, inset: cell-pad)[#body]
 `
 
 func renderTypst(fm frontMatter, plan scheduledPlan, warning string) string {
 	var b strings.Builder
 	b.WriteString(rendererPreamble)
 	b.WriteString("\n")
-	b.WriteString("#align(center)[")
+	b.WriteString("#align(center)[#text(size: 14pt, weight: \"bold\")[")
 	b.WriteString(escape(placeholder(fm.SchoolYear, "请输入学年")))
 	b.WriteString("学年")
 	b.WriteString(escape(placeholder(fm.Semester, "请输入学期")))
 	b.WriteString(escape(placeholder(fm.WeekRange, "请输入周次范围")))
-	b.WriteString("]\n")
-	b.WriteString("#align(center)[#text(size: zh(4), weight: \"bold\")[工学一体化课程/基本技能课程授课进度计划表]]\n\n")
+	b.WriteString("]]\n")
+	b.WriteString("#v(0.45em)\n")
+	b.WriteString("#align(center)[#text(size: 14pt, weight: \"bold\")[工学一体化课程/基本技能课程授课进度计划表]]\n")
+	b.WriteString("#v(0.72em)\n\n")
 	writeMetadata(&b, fm)
 	if warning != "" {
 		b.WriteString("#block(below: 8pt)[")
@@ -458,57 +472,57 @@ func writeMetadata(b *strings.Builder, fm frontMatter) {
 		"授课教师：" + placeholder(fm.TeacherName, "请输入授课教师"),
 		"授课班级：" + placeholder(fm.ClassName, "请输入授课班级"),
 	}
-	b.WriteString("#grid(columns: (1fr, 1fr), gutter: 6pt,\n")
+	b.WriteString("#text(size: 10.5pt)[\n")
+	b.WriteString("  #grid(columns: (1fr, 1fr), row-gutter: 0.75em,\n")
 	for _, item := range items {
-		b.WriteString("  [")
+		b.WriteString("    [")
 		b.WriteString(escape(item))
 		b.WriteString("],\n")
 	}
-	b.WriteString(")\n\n")
+	b.WriteString("  )\n")
+	b.WriteString("]\n\n")
+	b.WriteString("#v(0.9em)\n\n")
 }
 
 func writePlanTable(b *strings.Builder, plan scheduledPlan) {
-	b.WriteString(`#table(
-  columns: (3.0cm, 7.3cm, 1.6cm, 1.5cm, 1.5cm, 1.4cm),
-  stroke: 0.6pt,
+	b.WriteString(`#align(center)[
+  #table(
+    columns: (3.15cm, 8.51cm, 1.12cm, 1.29cm, 1.27cm),
+    stroke: 0.5pt,
+    align: center + horizon,
 `)
 	for taskIndex, task := range plan.Tasks {
-		b.WriteString(fmt.Sprintf("  table.cell(colspan: 2)[%s], table.cell(colspan: 2)[%s], [学时], [%dH],\n",
-			escape(fmt.Sprintf("学习任务%d名称：%s", taskIndex+1, placeholder(task.Name, missingTaskName))),
-			escape("任务总学时"),
+		b.WriteString(fmt.Sprintf("    task-th[%s],\n    task-th[%s],\n    table.cell(colspan: 2, align: center + horizon, inset: cell-pad)[学时],\n    th[%dH],\n\n",
+			escape(fmt.Sprintf("学习任务%d名称：", taskIndex+1)),
+			escape(placeholder(task.Name, missingTaskName)),
 			task.TotalHours,
 		))
 		if taskIndex == 0 {
-			b.WriteString("  [教学内容], [周次], [星期], [学时], [备注], [签名],\n")
+			b.WriteString("    subth[],\n    subth[教学内容],\n    subth[周次],\n    subth[星期],\n    subth[学时],\n\n")
 		}
 		for activityIndex, activity := range task.Activities {
-			rowspan := len(activity.Rows)
-			if rowspan < 1 {
-				rowspan = 1
-			}
-			for rowIndex, row := range activity.Rows {
-				if rowIndex == 0 {
-					b.WriteString(fmt.Sprintf("  table.cell(rowspan: %d)[%s], ", rowspan, escape(fmt.Sprintf("学习环节%d名称：%s", activityIndex+1, placeholder(activity.Name, missingActivityName)))))
-				}
-				b.WriteString(fmt.Sprintf("[%s], [%s], [%s], [%s], [],\n",
+			for _, row := range activity.Rows {
+				b.WriteString(fmt.Sprintf("    body-cell[%s],\n    content-cell[%s],\n    body-cell[%s],\n    body-cell[%s],\n    body-cell[%s],\n\n",
+					escape(fmt.Sprintf("学习环节%d名称：%s", activityIndex+1, placeholder(activity.Name, missingActivityName))),
 					escape(placeholder(row.Text, missingContent)),
 					escape(row.WeekDisplay),
 					escape(row.WeekdayDisplay),
-					escape(row.HourDisplay),
+					escape(strconv.Itoa(row.Hours)),
 				))
 			}
 		}
 	}
-	b.WriteString(")\n\n")
+	b.WriteString("  )\n]\n\n")
 }
 
 func writeSignature(b *strings.Builder, fm frontMatter) {
-	b.WriteString("#grid(columns: (1fr, 1fr, 1fr), gutter: 12pt,\n")
-	labels := []string{"系主任：", "教研室主任：", "制表：" + placeholder(fm.PreparedBy, "请输入制表人")}
+	b.WriteString("#v(1.1em)\n")
+	b.WriteString("#grid(columns: (1fr, 1fr, 1fr),\n")
+	labels := []string{"系主任：", "教研室主任：", "制表：" + placeholder(fm.TeacherName, "请输入授课教师")}
 	for _, label := range labels {
-		b.WriteString("  [")
+		b.WriteString("  [#align(center)[")
 		b.WriteString(escape(label))
-		b.WriteString("],\n")
+		b.WriteString("]],\n")
 	}
 	b.WriteString(")\n")
 }
@@ -523,9 +537,4 @@ func placeholder(value, fallback string) string {
 
 func escape(value string) string {
 	return typst.EscapeContent(value)
-}
-
-func sortStrings(values []string) []string {
-	sort.Strings(values)
-	return values
 }
