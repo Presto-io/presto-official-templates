@@ -8,5 +8,7 @@
   "category": "教育",
   "keywords": ["授课计划", "教学计划", "工学一体化", "教案"],
   "minPrestoVersion": "1.0.0",
-  "requiredFonts": ["STSong"]
+  "requiredFonts": [
+    { "name": "STSong", "displayName": "华文宋体", "url": "https://www.foundertype.com/index.php/FontInfo/index/id/135" }
+  ]
 }

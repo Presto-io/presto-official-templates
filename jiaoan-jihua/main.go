@@ -142,7 +142,7 @@ func parseLearningPlanMarkdown(body string) learningPlan {
 
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "template:") {
+		if line == "" {
 			continue
 		}
 		switch {

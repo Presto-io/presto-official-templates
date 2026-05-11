@@ -8,7 +8,7 @@ import (
 )
 
 func TestManifestDefinesJiaoanJihua(t *testing.T) {
-	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"category": "教育"`, `"STSong"`} {
+	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"category": "教育"`, `"name": "STSong"`, `"displayName": "华文宋体"`, `"url": "https://www.foundertype.com/index.php/FontInfo/index/id/135"`} {
 		if !strings.Contains(manifestJSON, want) {
 			t.Fatalf("manifest missing %q", want)
 		}
@@ -73,6 +73,13 @@ func TestParseMultipleTasksPreservesOrder(t *testing.T) {
 	plan := parseLearningPlanMarkdown(body)
 	assertEqual(t, plan.Tasks[0].Name, "CA6140卧式车床电气控制线路安装与调试")
 	assertEqual(t, plan.Tasks[1].Name, "X62W万能铣床电气控制线路安装与调试")
+}
+
+func TestParseContentRowStartingWithTemplateIsPreserved(t *testing.T) {
+	plan := parseLearningPlanMarkdown("## 任务\n\n### 环节\n\ntemplate: PLC控制模板讲解-2\n")
+	row := plan.Tasks[0].Activities[0].Rows[0]
+	assertEqual(t, row.Text, "template: PLC控制模板讲解")
+	assertEqual(t, row.Hours, 2)
 }
 
 func TestMissingFieldsRenderPlaceholders(t *testing.T) {
