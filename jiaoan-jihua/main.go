@@ -490,7 +490,7 @@ func writePlanTable(b *strings.Builder, plan scheduledPlan) {
 				if rowIndex == 0 {
 					b.WriteString(fmt.Sprintf("  table.cell(rowspan: %d)[%s], ", rowspan, escape(fmt.Sprintf("学习环节%d名称：%s", activityIndex+1, placeholder(activity.Name, missingActivityName)))))
 				}
-				b.WriteString(fmt.Sprintf("[%s], [%s], [%s], [%s], [], [],\n",
+				b.WriteString(fmt.Sprintf("[%s], [%s], [%s], [%s], [],\n",
 					escape(placeholder(row.Text, missingContent)),
 					escape(row.WeekDisplay),
 					escape(row.WeekdayDisplay),
