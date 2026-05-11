@@ -1,6 +1,6 @@
 .PHONY: build build-all test test-security clean preview
 
-TEMPLATES := gongwen jiaoan-shicao
+TEMPLATES := gongwen jiaoan-shicao jiaoan-jihua
 
 # Go 安全黑名单：禁止这些标准库包
 GO_STDLIB_DENY := ^net$$|^net/|^os/exec$$|^plugin$$|^debug/
