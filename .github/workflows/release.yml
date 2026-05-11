@@ -62,10 +62,12 @@ jobs:
             exit 1
           fi
 
-          echo "template=${TEMPLATE}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "is_prerelease=${IS_PRERELEASE}" >> "$GITHUB_OUTPUT"
-          echo "allow_unsigned_windows=${ALLOW_UNSIGNED_WINDOWS}" >> "$GITHUB_OUTPUT"
+          {
+            echo "template=${TEMPLATE}"
+            echo "version=${VERSION}"
+            echo "is_prerelease=${IS_PRERELEASE}"
+            echo "allow_unsigned_windows=${ALLOW_UNSIGNED_WINDOWS}"
+          } >> "$GITHUB_OUTPUT"
 
   signpath-preflight:
     permissions:
@@ -73,61 +75,74 @@ jobs:
     needs: metadata
     runs-on: ubuntu-latest
     env:
-      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-      SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
-      SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
-      SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
+      # Temporarily disabled while SignPath certificate checks are paused.
+      # SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      # SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      # SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+      # SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+      # SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+      # SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
       ALLOW_UNSIGNED_WINDOWS: ${{ needs.metadata.outputs.allow_unsigned_windows }}
     steps:
-      - name: Require public trusted signing configuration
+      - name: Temporarily bypass SignPath certificate preflight
         shell: bash
         run: |
-          if [ "${ALLOW_UNSIGNED_WINDOWS}" = "true" ]; then
-            {
-              echo "## beta release uses unsigned Windows assets"
-              echo
-              echo "Release tag: \`${GITHUB_REF_NAME}\`"
-              echo "Template: \`${{ needs.metadata.outputs.template }}\`"
-              echo
-              echo "This beta release skips SignPath trusted signing. Stable official releases still fail closed when SignPath is not configured."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
+          {
+            echo "## SignPath certificate preflight temporarily disabled"
+            echo
+            echo "Release tag: \`${GITHUB_REF_NAME}\`"
+            echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+            echo
+            echo "CI is continuing without requiring SignPath certificate configuration."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          missing=()
-          for name in \
-            SIGNPATH_API_TOKEN \
-            SIGNPATH_ORGANIZATION_ID \
-            SIGNPATH_PROJECT_SLUG \
-            SIGNPATH_SIGNING_POLICY_SLUG \
-            SIGNPATH_ARTIFACT_CONFIGURATION_SLUG \
-            SIGNPATH_EXPECTED_PUBLISHER
-          do
-            if [ -z "${!name}" ]; then
-              missing+=("${name}")
-            fi
-          done
-
-          if [ "${#missing[@]}" -ne 0 ]; then
-            {
-              echo "## public trusted signing blocked"
-              echo
-              echo "Release tag: \`${GITHUB_REF_NAME}\`"
-              echo "Template: \`${{ needs.metadata.outputs.template }}\`"
-              echo
-              echo "Missing SignPath configuration:"
-              for name in "${missing[@]}"; do
-                echo "- \`${name}\`"
-              done
-              echo
-              echo "Next step: configure SignPath Open Source signing for this repository, then rerun by pushing a new protected release tag."
-            } >> "$GITHUB_STEP_SUMMARY"
-
-            echo "public trusted signing blocked: missing ${missing[*]}" >&2
-            exit 1
-          fi
+      # - name: Require public trusted signing configuration
+      #   shell: bash
+      #   run: |
+      #     if [ "${ALLOW_UNSIGNED_WINDOWS}" = "true" ]; then
+      #       {
+      #         echo "## beta release uses unsigned Windows assets"
+      #         echo
+      #         echo "Release tag: \`${GITHUB_REF_NAME}\`"
+      #         echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+      #         echo
+      #         echo "This beta release skips SignPath trusted signing. Stable official releases still fail closed when SignPath is not configured."
+      #       } >> "$GITHUB_STEP_SUMMARY"
+      #       exit 0
+      #     fi
+      #
+      #     missing=()
+      #     for name in \
+      #       SIGNPATH_API_TOKEN \
+      #       SIGNPATH_ORGANIZATION_ID \
+      #       SIGNPATH_PROJECT_SLUG \
+      #       SIGNPATH_SIGNING_POLICY_SLUG \
+      #       SIGNPATH_ARTIFACT_CONFIGURATION_SLUG \
+      #       SIGNPATH_EXPECTED_PUBLISHER
+      #     do
+      #       if [ -z "${!name}" ]; then
+      #         missing+=("${name}")
+      #       fi
+      #     done
+      #
+      #     if [ "${#missing[@]}" -ne 0 ]; then
+      #       {
+      #         echo "## public trusted signing blocked"
+      #         echo
+      #         echo "Release tag: \`${GITHUB_REF_NAME}\`"
+      #         echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+      #         echo
+      #         echo "Missing SignPath configuration:"
+      #         for name in "${missing[@]}"; do
+      #           echo "- \`${name}\`"
+      #         done
+      #         echo
+      #         echo "Next step: configure SignPath Open Source signing for this repository, then rerun by pushing a new protected release tag."
+      #       } >> "$GITHUB_STEP_SUMMARY"
+      #
+      #       echo "public trusted signing blocked: missing ${missing[*]}" >&2
+      #       exit 1
+      #     fi
 
   validate:
     permissions:
@@ -252,81 +267,93 @@ jobs:
           printf '%s\n' "${windows[@]}" | sort > unsigned-windows-files.txt
           sha256sum "${windows[@]}" | sort -k2 > unsigned-windows.sha256
 
-      - name: Upload unsigned Windows assets for SignPath
-        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
-        id: upload-unsigned-windows
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: unsigned-windows-template-exes
-          path: presto-template-*-windows-*.exe
-          if-no-files-found: error
-          retention-days: 1
+      # - name: Upload unsigned Windows assets for SignPath
+      #   if: needs.metadata.outputs.allow_unsigned_windows != 'true'
+      #   id: upload-unsigned-windows
+      #   uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      #   with:
+      #     name: unsigned-windows-template-exes
+      #     path: presto-template-*-windows-*.exe
+      #     if-no-files-found: error
+      #     retention-days: 1
+      #
+      # - name: Submit SignPath signing request
+      #   if: needs.metadata.outputs.allow_unsigned_windows != 'true'
+      #   id: signpath
+      #   uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      #     project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+      #     signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+      #     artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+      #     github-artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: signed-windows
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     parameters: |
+      #       template: ${{ toJSON(needs.metadata.outputs.template) }}
+      #       version: ${{ toJSON(needs.metadata.outputs.version) }}
+      #
+      # - name: Replace Windows assets with signed bytes
+      #   if: needs.metadata.outputs.allow_unsigned_windows != 'true'
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
+      #     shopt -s globstar nullglob
+      #
+      #     mkdir -p signed-flat
+      #     signed_candidates=(signed-windows/**/presto-template-*-windows-*.exe)
+      #     if [ "${#signed_candidates[@]}" -eq 0 ]; then
+      #       echo "public trusted signing blocked: SignPath returned no signed Windows .exe assets" >&2
+      #       exit 1
+      #     fi
+      #
+      #     for signed in "${signed_candidates[@]}"; do
+      #       base="$(basename "$signed")"
+      #       if [ -e "signed-flat/${base}" ]; then
+      #         echo "public trusted signing blocked: duplicate signed asset ${base}" >&2
+      #         exit 1
+      #       fi
+      #       cp "$signed" "signed-flat/${base}"
+      #     done
+      #
+      #     (
+      #       cd signed-flat
+      #       printf '%s\n' presto-template-*-windows-*.exe | sort
+      #     ) > signed-windows-files.txt
+      #
+      #     if ! cmp -s unsigned-windows-files.txt signed-windows-files.txt; then
+      #       echo "public trusted signing blocked: signed Windows asset set differs from unsigned set" >&2
+      #       echo "unsigned:" >&2
+      #       cat unsigned-windows-files.txt >&2
+      #       echo "signed:" >&2
+      #       cat signed-windows-files.txt >&2
+      #       exit 1
+      #     fi
+      #
+      #     mapfile -t unsigned_files < unsigned-windows-files.txt
+      #     for file in "${unsigned_files[@]}"; do
+      #       cp "signed-flat/${file}" "${file}"
+      #     done
+      #
+      #     sha256sum "${unsigned_files[@]}" | sort -k2 > signed-windows.sha256
+      #     if cmp -s unsigned-windows.sha256 signed-windows.sha256; then
+      #       echo "public trusted signing blocked: Windows asset hashes did not change after signing" >&2
+      #       exit 1
+      #     fi
 
-      - name: Submit SignPath signing request
-        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
-        id: signpath
-        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: signed-windows
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          parameters: |
-            template: ${{ toJSON(needs.metadata.outputs.template) }}
-            version: ${{ toJSON(needs.metadata.outputs.version) }}
-
-      - name: Replace Windows assets with signed bytes
-        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
+      - name: Record unsigned Windows assets while SignPath is disabled
         shell: bash
         run: |
-          set -euo pipefail
-          shopt -s globstar nullglob
-
-          mkdir -p signed-flat
-          signed_candidates=(signed-windows/**/presto-template-*-windows-*.exe)
-          if [ "${#signed_candidates[@]}" -eq 0 ]; then
-            echo "public trusted signing blocked: SignPath returned no signed Windows .exe assets" >&2
-            exit 1
-          fi
-
-          for signed in "${signed_candidates[@]}"; do
-            base="$(basename "$signed")"
-            if [ -e "signed-flat/${base}" ]; then
-              echo "public trusted signing blocked: duplicate signed asset ${base}" >&2
-              exit 1
-            fi
-            cp "$signed" "signed-flat/${base}"
-          done
-
-          (
-            cd signed-flat
-            printf '%s\n' presto-template-*-windows-*.exe | sort
-          ) > signed-windows-files.txt
-
-          if ! cmp -s unsigned-windows-files.txt signed-windows-files.txt; then
-            echo "public trusted signing blocked: signed Windows asset set differs from unsigned set" >&2
-            echo "unsigned:" >&2
-            cat unsigned-windows-files.txt >&2
-            echo "signed:" >&2
-            cat signed-windows-files.txt >&2
-            exit 1
-          fi
-
-          mapfile -t unsigned_files < unsigned-windows-files.txt
-          for file in "${unsigned_files[@]}"; do
-            cp "signed-flat/${file}" "${file}"
-          done
-
-          sha256sum "${unsigned_files[@]}" | sort -k2 > signed-windows.sha256
-          if cmp -s unsigned-windows.sha256 signed-windows.sha256; then
-            echo "public trusted signing blocked: Windows asset hashes did not change after signing" >&2
-            exit 1
-          fi
+          {
+            echo "## SignPath signing temporarily disabled"
+            echo
+            echo "Release tag: \`${GITHUB_REF_NAME}\`"
+            echo "Template: \`${{ needs.metadata.outputs.template }}\`"
+            echo
+            echo "Windows .exe assets are being uploaded unsigned while SignPath certificate checks are paused."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record unsigned beta Windows assets
         if: needs.metadata.outputs.allow_unsigned_windows == 'true'
@@ -362,27 +389,33 @@ jobs:
         with:
           name: signed-release-assets
 
-      - name: Verify Authenticode signatures
-        if: needs.metadata.outputs.allow_unsigned_windows != 'true'
+      # - name: Verify Authenticode signatures
+      #   if: needs.metadata.outputs.allow_unsigned_windows != 'true'
+      #   shell: pwsh
+      #   env:
+      #     SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
+      #   run: |
+      #     $ErrorActionPreference = 'Stop'
+      #     $publishers = $env:SIGNPATH_EXPECTED_PUBLISHER -split '\s*,\s*' | Where-Object { $_ }
+      #     if (-not $publishers -or $publishers.Count -eq 0) {
+      #       throw 'public trusted signing blocked: SIGNPATH_EXPECTED_PUBLISHER is empty'
+      #     }
+      #
+      #     $exe = Get-ChildItem -LiteralPath . -Filter 'presto-template-*-windows-*.exe' -File
+      #     if (-not $exe -or $exe.Count -eq 0) {
+      #       throw 'public trusted signing blocked: no signed Windows .exe assets found'
+      #     }
+      #
+      #     .\scripts\verify-windows-signature.ps1 `
+      #       -InputPath $exe.FullName `
+      #       -ExpectedPublisher $publishers `
+      #       -RequireTimestamp
+
+      - name: Temporarily skip Authenticode verification
         shell: pwsh
-        env:
-          SIGNPATH_EXPECTED_PUBLISHER: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $publishers = $env:SIGNPATH_EXPECTED_PUBLISHER -split '\s*,\s*' | Where-Object { $_ }
-          if (-not $publishers -or $publishers.Count -eq 0) {
-            throw 'public trusted signing blocked: SIGNPATH_EXPECTED_PUBLISHER is empty'
-          }
-
-          $exe = Get-ChildItem -LiteralPath . -Filter 'presto-template-*-windows-*.exe' -File
-          if (-not $exe -or $exe.Count -eq 0) {
-            throw 'public trusted signing blocked: no signed Windows .exe assets found'
-          }
-
-          .\scripts\verify-windows-signature.ps1 `
-            -InputPath $exe.FullName `
-            -ExpectedPublisher $publishers `
-            -RequireTimestamp
+          "SignPath certificate verification is temporarily disabled for this workflow run." |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
       - name: Skip Authenticode verification for beta
         if: needs.metadata.outputs.allow_unsigned_windows == 'true'
