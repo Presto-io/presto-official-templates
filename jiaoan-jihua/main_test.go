@@ -191,8 +191,11 @@ func TestSingleContentRowSpanningWeeksStaysOneRow(t *testing.T) {
 	}
 	got := schedulePlan(oneRowPlan("跨周综合训练", 12), fm, days).Tasks[0].Activities[0].Rows[0]
 	assertEqual(t, got.HourDisplay, "12H")
-	assertEqual(t, got.WeekDisplay, "1、2")
+	assertEqual(t, got.WeekDisplay, "1 2")
 	assertEqual(t, got.WeekdayDisplay, "5 1 2")
+	if strings.Contains(got.WeekDisplay, "、") || strings.Contains(got.WeekdayDisplay, "、") {
+		t.Fatal("week and weekday columns should use spaces, not dunhao")
+	}
 }
 
 func TestWeekendWorkdayUsesRealWeekday(t *testing.T) {
@@ -253,11 +256,12 @@ func TestRenderUsesColspanForTaskRows(t *testing.T) {
 
 func TestRenderUsesRowspanOnlyOnFirstActivityRow(t *testing.T) {
 	output := convertMarkdown(exampleMD)
-	if strings.Contains(output, "table.cell(rowspan:") {
-		t.Fatal("approved visual prototype uses repeated activity cells, not rowspans")
+	want := "table.cell(rowspan: 3, align: center + horizon, inset: cell-pad)[学习环节1名称：安技教育及旧知识回顾]"
+	if !strings.Contains(output, want) {
+		t.Fatalf("missing activity rowspan cell %q", want)
 	}
-	if strings.Count(output, "学习环节1名称：安技教育及旧知识回顾") != 3 {
-		t.Fatal("activity label should repeat for each content row")
+	if strings.Count(output, "学习环节1名称：安技教育及旧知识回顾") != 1 {
+		t.Fatal("activity label should be emitted once and merged across content rows")
 	}
 }
 

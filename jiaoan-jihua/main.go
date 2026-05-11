@@ -334,7 +334,7 @@ func scheduleRow(row contentRow, days []calendarDay, cursor int, remainingToday 
 	return scheduledRow{
 		Text:           row.Text,
 		Hours:          row.Hours,
-		WeekDisplay:    weeks.Join("、"),
+		WeekDisplay:    weeks.Join(" "),
 		WeekdayDisplay: weekdays.Join(" "),
 		HourDisplay:    fmt.Sprintf("%dH", row.Hours),
 	}, cursor, remainingToday
@@ -501,9 +501,12 @@ func writePlanTable(b *strings.Builder, plan scheduledPlan) {
 			b.WriteString("    subth[],\n    subth[教学内容],\n    subth[周次],\n    subth[星期],\n    subth[学时],\n\n")
 		}
 		for activityIndex, activity := range task.Activities {
-			for _, row := range activity.Rows {
-				b.WriteString(fmt.Sprintf("    body-cell[%s],\n    content-cell[%s],\n    body-cell[%s],\n    body-cell[%s],\n    body-cell[%s],\n\n",
-					escape(fmt.Sprintf("学习环节%d名称：%s", activityIndex+1, placeholder(activity.Name, missingActivityName))),
+			activityLabel := escape(fmt.Sprintf("学习环节%d名称：%s", activityIndex+1, placeholder(activity.Name, missingActivityName)))
+			for rowIndex, row := range activity.Rows {
+				if rowIndex == 0 {
+					b.WriteString(fmt.Sprintf("    table.cell(rowspan: %d, align: center + horizon, inset: cell-pad)[%s],\n", len(activity.Rows), activityLabel))
+				}
+				b.WriteString(fmt.Sprintf("    content-cell[%s],\n    body-cell[%s],\n    body-cell[%s],\n    body-cell[%s],\n\n",
 					escape(placeholder(row.Text, missingContent)),
 					escape(row.WeekDisplay),
 					escape(row.WeekdayDisplay),
