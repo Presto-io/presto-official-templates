@@ -525,10 +525,13 @@ jobs:
           TEMPLATE: ${{ needs.metadata.outputs.template }}
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
-          gh api repos/Presto-io/Presto-doc/dispatches \
-            -f event_type=official-template-updated \
-            -f "client_payload[template]=${TEMPLATE}" \
-            -f "client_payload[version]=${VERSION}" \
-            -f "client_payload[tag]=${RELEASE_TAG}"
+          if ! gh api repos/Presto-io/Presto-doc/dispatches \
+              -f event_type=official-template-updated \
+              -f "client_payload[template]=${TEMPLATE}" \
+              -f "client_payload[version]=${VERSION}" \
+              -f "client_payload[tag]=${RELEASE_TAG}"; then
+            echo "::warning::Could not trigger Presto-doc guide sync. Check PRESTO_PAT access to Presto-io/Presto-doc; the docs repository also runs scheduled self-sync as a fallback."
+            exit 0
+          fi
 
           echo "Triggered Presto-doc guide sync for ${TEMPLATE} ${RELEASE_TAG}"
