@@ -517,3 +517,18 @@ jobs:
             -f "client_payload[channel]=${REGISTRY_CHANNEL}"
 
           echo "Triggered CDN sync for ${TEMPLATE} ${RELEASE_TAG} (${REGISTRY_CHANNEL})"
+
+      - name: Trigger Presto-doc template guide sync
+        env:
+          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          TEMPLATE: ${{ needs.metadata.outputs.template }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          gh api repos/Presto-io/Presto-doc/dispatches \
+            -f event_type=official-template-updated \
+            -f "client_payload[template]=${TEMPLATE}" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[tag]=${RELEASE_TAG}"
+
+          echo "Triggered Presto-doc guide sync for ${TEMPLATE} ${RELEASE_TAG}"
