@@ -22,15 +22,19 @@ ifndef NAME
 	@for t in $(TEMPLATES); do \
 		echo "Testing $$t..."; \
 		./presto-template-$$t --manifest | python3 -m json.tool > /dev/null && \
+		./presto-template-$$t --manifest | python3 -c 'import json,sys; m=json.load(sys.stdin); assert m.get("capabilities", {}).get("outputInfo") is True' && \
 		./presto-template-$$t --manifest | python3 -c 'import json,sys; m=json.load(sys.stdin); fonts=m.get("requiredFonts", []); assert isinstance(fonts, list); assert all(isinstance(f, dict) and {"name","displayName","url"} <= set(f) for f in fonts)' && \
 		./presto-template-$$t --example | ./presto-template-$$t > /dev/null && \
+		./presto-template-$$t --example | ./presto-template-$$t --info | python3 -m json.tool > /dev/null && \
 		./presto-template-$$t --version > /dev/null && \
 		echo "  $$t: OK"; \
 	done
 else
 	./presto-template-$(NAME) --manifest | python3 -m json.tool > /dev/null
+	./presto-template-$(NAME) --manifest | python3 -c 'import json,sys; m=json.load(sys.stdin); assert m.get("capabilities", {}).get("outputInfo") is True'
 	./presto-template-$(NAME) --manifest | python3 -c 'import json,sys; m=json.load(sys.stdin); fonts=m.get("requiredFonts", []); assert isinstance(fonts, list); assert all(isinstance(f, dict) and {"name","displayName","url"} <= set(f) for f in fonts)'
 	./presto-template-$(NAME) --example | ./presto-template-$(NAME) > /dev/null
+	./presto-template-$(NAME) --example | ./presto-template-$(NAME) --info | python3 -m json.tool > /dev/null
 	./presto-template-$(NAME) --version > /dev/null
 endif
 

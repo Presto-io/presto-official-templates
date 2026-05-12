@@ -24,6 +24,8 @@ var exampleMD string
 func main() {
 	cli.Run(manifestJSON, exampleMD, func(input string) string {
 		return convertMarkdown(input)
+	}, func(input string) cli.OutputInfo {
+		return outputInfo(input)
 	})
 }
 
@@ -106,6 +108,61 @@ func convertMarkdown(input string) string {
 	plan = normalizeLearningPlan(plan, strings.TrimSpace(body) != "")
 	days, warning := loadCalendar(fm)
 	return renderTypst(fm, schedulePlan(plan, fm, days), warning)
+}
+
+func outputInfo(input string) cli.OutputInfo {
+	fm, _ := parseFrontMatter(input)
+	return outputInfoFromFrontMatter(fm)
+}
+
+func outputInfoFromFrontMatter(fm frontMatter) cli.OutputInfo {
+	title := "授课进度计划表"
+	if strings.TrimSpace(fm.CourseName) != "" {
+		title += " " + fm.CourseName
+	}
+	base := title
+	if strings.TrimSpace(fm.SchoolYear) != "" {
+		base += " " + fm.SchoolYear
+	}
+	if strings.TrimSpace(fm.Semester) != "" {
+		base += " " + fm.Semester
+	}
+	authors := []string{}
+	if strings.TrimSpace(fm.PreparedBy) != "" {
+		authors = append(authors, fm.PreparedBy)
+	} else if strings.TrimSpace(fm.TeacherName) != "" {
+		authors = append(authors, fm.TeacherName)
+	}
+	return cli.OutputInfo{
+		SchemaVersion:  1,
+		OutputBaseName: cleanFilenameBase(base),
+		PreviewTitle:   title,
+		Document: cli.DocumentInfo{
+			Title:       title,
+			Authors:     authors,
+			Date:        fm.FirstTeachingDay,
+			Keywords:    []string{"授课计划", "教学计划", "工学一体化"},
+			Subject:     "授课进度计划表",
+			Description: "Presto 授课进度计划表模板生成的 PDF",
+			Language:    "zh-CN",
+		},
+		TemplateData: map[string]interface{}{
+			"schoolYear": fm.SchoolYear,
+			"semester":   fm.Semester,
+			"courseName": fm.CourseName,
+			"majorName":  fm.MajorName,
+			"className":  fm.ClassName,
+		},
+	}
+}
+
+func cleanFilenameBase(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
+	value = strings.TrimSpace(replacer.Replace(value))
+	if value == "" {
+		return "output"
+	}
+	return value
 }
 
 func parseFrontMatter(input string) (frontMatter, string) {
@@ -437,6 +494,12 @@ func renderTypst(fm frontMatter, plan scheduledPlan, warning string) string {
 	var b strings.Builder
 	b.WriteString(rendererPreamble)
 	b.WriteString("\n")
+	info := outputInfoFromFrontMatter(fm)
+	author := "Presto"
+	if len(info.Document.Authors) > 0 {
+		author = info.Document.Authors[0]
+	}
+	b.WriteString(fmt.Sprintf("#set document(\n  title: \"%s\",\n  author: \"%s\",\n  keywords: \"授课计划, 教学计划, 工学一体化\",\n)\n\n", typst.EscapeString(info.Document.Title), typst.EscapeString(author)))
 	b.WriteString("#align(center)[#text(size: 14pt, weight: \"bold\")[")
 	b.WriteString(escape(placeholder(fm.SchoolYear, "请输入学年")))
 	b.WriteString("学年")

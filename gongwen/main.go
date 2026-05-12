@@ -1199,7 +1199,7 @@ func convert(fm frontMatter, body string) string {
   title: autoTitle.replace("|", " "),
   author: autoAuthor,
   keywords: "工作总结, 年终报告",
-  date: auto,
+  date: autoDate,
 )
 
 = #autoTitle.split("|").map(s => s.trim()).join(linebreak())
@@ -1240,5 +1240,38 @@ func main() {
 	cli.Run(manifestJSON, exampleMD, func(input string) string {
 		fm, body := parseFrontMatter(input)
 		return convert(fm, body)
+	}, func(input string) cli.OutputInfo {
+		fm, _ := parseFrontMatter(input)
+		title := strings.TrimSpace(strings.ReplaceAll(fm.Title, "|", " "))
+		if title == "" {
+			title = "output"
+		}
+		authors := []string{}
+		if strings.TrimSpace(fm.Author) != "" && fm.Author != "请输入文字" {
+			authors = []string{fm.Author}
+		}
+		return cli.OutputInfo{
+			SchemaVersion:  1,
+			OutputBaseName: cleanFilenameBase(title),
+			PreviewTitle:   title,
+			Document: cli.DocumentInfo{
+				Title:       title,
+				Authors:     authors,
+				Date:        fm.Date,
+				Keywords:    []string{"公文", "通知", "报告", "GB/T 9704"},
+				Subject:     "类公文文档",
+				Description: "Presto 类公文模板生成的 PDF",
+				Language:    "zh-CN",
+			},
+		}
 	})
+}
+
+func cleanFilenameBase(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
+	value = strings.TrimSpace(replacer.Replace(value))
+	if value == "" {
+		return "output"
+	}
+	return value
 }

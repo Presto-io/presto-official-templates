@@ -22,6 +22,8 @@ var exampleMD string
 func main() {
 	cli.Run(manifestJSON, exampleMD, func(input string) string {
 		return convertMarkdown(input)
+	}, func(input string) cli.OutputInfo {
+		return outputInfo(input)
 	})
 }
 
@@ -190,6 +192,66 @@ func yamlString(raw map[string]interface{}, key string) string {
 func convertMarkdown(input string) string {
 	fm, body := parseLessonFrontMatter(input)
 	return generateTypstWithFrontMatter(fm, parseMarkdown(body))
+}
+
+func outputInfo(input string) cli.OutputInfo {
+	fm, _ := parseLessonFrontMatter(input)
+	title := strings.TrimSpace(fm.CourseName)
+	if title == "" {
+		title = "实操教案"
+	}
+	base := "教学设计方案"
+	if fm.CourseName != "" {
+		base += " " + fm.CourseName
+	}
+	if hours := normalizeOutputHours(fm.TotalHours); hours != "" {
+		base += " " + hours
+	}
+	authors := []string{}
+	if strings.TrimSpace(fm.TeacherName) != "" {
+		authors = []string{fm.TeacherName}
+	}
+	return cli.OutputInfo{
+		SchemaVersion:  1,
+		OutputBaseName: cleanFilenameBase(base),
+		PreviewTitle:   title,
+		Document: cli.DocumentInfo{
+			Title:       title,
+			Authors:     authors,
+			Date:        fm.UseTime,
+			Keywords:    []string{"教案", "实操", "教学设计"},
+			Subject:     "实操教案",
+			Description: "Presto 实操教案模板生成的 PDF",
+			Language:    "zh-CN",
+		},
+		TemplateData: map[string]interface{}{
+			"courseName":      fm.CourseName,
+			"courseAttribute": fm.CourseAttribute,
+			"className":       fm.ClassName,
+			"totalHours":      fm.TotalHours,
+		},
+	}
+}
+
+func normalizeOutputHours(value string) string {
+	hours := strings.TrimSpace(value)
+	if hours == "" {
+		return ""
+	}
+	upper := strings.ToUpper(hours)
+	if strings.HasSuffix(upper, "H") || strings.Contains(hours, "课时") || strings.Contains(hours, "小时") {
+		return hours
+	}
+	return hours + "H"
+}
+
+func cleanFilenameBase(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
+	value = strings.TrimSpace(replacer.Replace(value))
+	if value == "" {
+		return "output"
+	}
+	return value
 }
 
 func (fm lessonFrontMatter) hasCoverFields() bool {
@@ -392,6 +454,15 @@ func generateTypst(sections []DocumentSection) string {
 func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSection) string {
 	var sb strings.Builder
 	sb.WriteString(preamble)
+	title := strings.TrimSpace(fm.CourseName)
+	if title == "" {
+		title = "实操教案"
+	}
+	author := strings.TrimSpace(fm.TeacherName)
+	if author == "" {
+		author = "Presto"
+	}
+	sb.WriteString(fmt.Sprintf("\n#set document(\n  title: \"%s\",\n  author: \"%s\",\n  keywords: \"教案, 实操, 教学设计\",\n)\n", typst.EscapeString(title), typst.EscapeString(author)))
 	currentPageLayout := ""
 	writePageSetup := func(layout string) {
 		if layout == currentPageLayout {

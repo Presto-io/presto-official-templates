@@ -8,15 +8,35 @@ import (
 	"os"
 )
 
+type DocumentInfo struct {
+	Title       string   `json:"title,omitempty"`
+	Authors     []string `json:"authors,omitempty"`
+	Date        string   `json:"date,omitempty"`
+	Keywords    []string `json:"keywords,omitempty"`
+	Subject     string   `json:"subject,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Language    string   `json:"language,omitempty"`
+}
+
+type OutputInfo struct {
+	SchemaVersion  int                    `json:"schemaVersion"`
+	OutputBaseName string                 `json:"outputBaseName"`
+	PreviewTitle   string                 `json:"previewTitle,omitempty"`
+	Document       DocumentInfo           `json:"document,omitempty"`
+	TemplateData   map[string]interface{} `json:"templateData,omitempty"`
+}
+
 // Run implements the standard template CLI protocol:
 //   - --manifest → print manifestJSON
 //   - --example  → print exampleMD
 //   - --version  → extract and print version from manifestJSON
+//   - --info     → read stdin Markdown and print output info JSON
 //   - otherwise  → read stdin, call convert, print result
-func Run(manifestJSON, exampleMD string, convert func(string) string) {
+func Run(manifestJSON, exampleMD string, convert func(string) string, info func(string) OutputInfo) {
 	manifestFlag := flag.Bool("manifest", false, "output manifest JSON")
 	exampleFlag := flag.Bool("example", false, "output example markdown")
 	versionFlag := flag.Bool("version", false, "output version")
+	infoFlag := flag.Bool("info", false, "output document info JSON")
 	flag.Parse()
 
 	if *versionFlag {
@@ -48,6 +68,20 @@ func Run(manifestJSON, exampleMD string, convert func(string) string) {
 	if len(input) > maxInputSize {
 		fmt.Fprintf(os.Stderr, "error: input exceeds %d bytes\n", maxInputSize)
 		os.Exit(1)
+	}
+
+	if *infoFlag {
+		if info == nil {
+			fmt.Print(`{"schemaVersion":1,"outputBaseName":"output"}`)
+			return
+		}
+		data, err := json.Marshal(info(string(input)))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error encoding info: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(string(data))
+		return
 	}
 
 	fmt.Print(convert(string(input)))
