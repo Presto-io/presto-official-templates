@@ -690,29 +690,129 @@ func formatLearningTaskDate(value string) string {
 }
 
 func resourceColumnSpec(resources map[string]string) string {
+	widths := resourceColumnWidthsCM(resources)
+	parts := make([]string, len(widths))
+	for i, width := range widths {
+		parts[i] = fmt.Sprintf("%.2fcm", width)
+	}
+	return fmt.Sprintf("(%s)", strings.Join(parts, ", "))
+}
+
+func resourceColumnWidthsCM(resources map[string]string) []float64 {
 	labels := []string{"工量具、设备", "耗材", "其它"}
 	minWidths := []float64{3.2, 2.6, 2.2}
-	weights := make([]float64, len(labels))
+	contents := make([]string, len(labels))
+	for i, label := range labels {
+		contents[i] = label + "：" + resources[label]
+	}
+
+	targets := resourceTargetWidthsCM(contents, minWidths)
+	const stepCM = 0.02
+	totalUnits := int(math.Round(portraitTableTotalWidthCM / stepCM))
+	minUnits := make([]int, len(minWidths))
+	for i, width := range minWidths {
+		minUnits[i] = int(math.Ceil(width / stepCM))
+	}
+
+	bestWidths := append([]float64(nil), targets...)
+	bestMaxLoad := math.Inf(1)
+	bestMaxLines := int(^uint(0) >> 1)
+	bestTotalLines := int(^uint(0) >> 1)
+	bestDistance := math.Inf(1)
+
+	for first := minUnits[0]; first <= totalUnits-minUnits[1]-minUnits[2]; first++ {
+		for second := minUnits[1]; second <= totalUnits-first-minUnits[2]; second++ {
+			third := totalUnits - first - second
+			widths := []float64{
+				float64(first) * stepCM,
+				float64(second) * stepCM,
+				float64(third) * stepCM,
+			}
+			maxLines := 0
+			totalLines := 0
+			maxLoad := 0.0
+			for i, width := range widths {
+				lines := resourceWrappedLineCount(contents[i], width)
+				maxLines = maxInt(maxLines, lines)
+				totalLines += lines
+				maxLoad = math.Max(maxLoad, resourceWrappedLineLoad(contents[i], width))
+			}
+
+			distance := 0.0
+			for i, width := range widths {
+				delta := width - targets[i]
+				distance += delta * delta
+			}
+			if maxLoad < bestMaxLoad ||
+				(nearlyEqualFloat(maxLoad, bestMaxLoad) && maxLines < bestMaxLines) ||
+				(nearlyEqualFloat(maxLoad, bestMaxLoad) && maxLines == bestMaxLines && totalLines < bestTotalLines) ||
+				(nearlyEqualFloat(maxLoad, bestMaxLoad) && maxLines == bestMaxLines && totalLines == bestTotalLines && distance < bestDistance) {
+				bestWidths = widths
+				bestMaxLoad = maxLoad
+				bestMaxLines = maxLines
+				bestTotalLines = totalLines
+				bestDistance = distance
+			}
+		}
+	}
+
+	return bestWidths
+}
+
+func resourceTargetWidthsCM(contents []string, minWidths []float64) []float64 {
+	widths := append([]float64(nil), minWidths...)
 	totalMin := 0.0
 	totalWeight := 0.0
-	for i, label := range labels {
+	weights := make([]float64, len(contents))
+	for i, content := range contents {
 		totalMin += minWidths[i]
-		content := label + "：" + resources[label]
 		weights[i] = math.Sqrt(float64(maxInt(displayWidth(content), 1)))
 		totalWeight += weights[i]
 	}
 
 	extra := portraitTableTotalWidthCM - totalMin
-	if extra < 0 || totalWeight == 0 {
-		extra = 0
+	if extra <= 0 || totalWeight == 0 {
+		return widths
 	}
 
-	widths := make([]string, len(labels))
-	for i := range labels {
-		width := minWidths[i] + extra*weights[i]/totalWeight
-		widths[i] = fmt.Sprintf("%.2fcm", width)
+	for i := range widths {
+		widths[i] += extra * weights[i] / totalWeight
 	}
-	return fmt.Sprintf("(%s)", strings.Join(widths, ", "))
+	return widths
+}
+
+func resourceWrappedLineCount(content string, widthCM float64) int {
+	availableUnits := resourceAvailableUnits(widthCM)
+
+	lines := 0
+	for _, line := range strings.Split(content, "\n") {
+		lineWidth := maxInt(displayWidth(line), 1)
+		lines += (lineWidth + availableUnits - 1) / availableUnits
+	}
+	return maxInt(lines, 1)
+}
+
+func resourceWrappedLineLoad(content string, widthCM float64) float64 {
+	availableUnits := float64(resourceAvailableUnits(widthCM))
+	load := 0.0
+	for _, line := range strings.Split(content, "\n") {
+		load += float64(maxInt(displayWidth(line), 1)) / availableUnits
+	}
+	return load
+}
+
+func resourceAvailableUnits(widthCM float64) int {
+	const displayUnitCM = 0.18
+	const horizontalInsetCM = 0.22
+	availableUnits := int(math.Floor((widthCM - horizontalInsetCM) / displayUnitCM))
+	if availableUnits < 1 {
+		return 1
+	}
+	return availableUnits
+}
+
+func nearlyEqualFloat(a, b float64) bool {
+	return math.Abs(a-b) < 1e-9
 }
 
 func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSection) {
@@ -754,7 +854,7 @@ func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSect
 	}
 
 	sb.WriteString("    table.cell(colspan: 6)[*五、学习资源*],\n")
-	sb.WriteString(fmt.Sprintf("    table.cell(colspan: 6, inset: 0pt, stroke: none)[#table(\n      columns: %s,\n      stroke: 0.5pt,\n      align: left + horizon,\n      inset: 3pt,\n      [工量具、设备：%s], [耗材：%s], [其它：%s],\n    )],\n", resourceColumnSpec(resources), typst.EscapeContent(resources["工量具、设备"]), typst.EscapeContent(resources["耗材"]), typst.EscapeContent(resources["其它"])))
+	sb.WriteString(fmt.Sprintf("    table.cell(colspan: 6, inset: 0pt, stroke: none)[#table(\n      columns: %s,\n      stroke: 0.5pt,\n      align: left + horizon,\n      inset: 5pt,\n      [工量具、设备：%s], [耗材：%s], [其它：%s],\n    )],\n", resourceColumnSpec(resources), typst.EscapeContent(resources["工量具、设备"]), typst.EscapeContent(resources["耗材"]), typst.EscapeContent(resources["其它"])))
 	sb.WriteString("  )\n")
 	sb.WriteString("]\n")
 }

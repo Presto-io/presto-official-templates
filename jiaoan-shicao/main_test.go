@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -345,6 +346,40 @@ func TestLearningTaskAnalysisFieldsBlocksResourcesAndEscaping(t *testing.T) {
 	}
 	if !strings.Contains(output, "columns: (") || !strings.Contains(output, "table.cell(colspan: 6, inset: 0pt, stroke: none)[#table(") {
 		t.Fatal("expected learning resources to render as a nested dynamic-width resource table")
+	}
+	if !strings.Contains(output, "inset: 5pt") {
+		t.Fatal("expected learning resource cells to preserve default content padding")
+	}
+}
+
+func TestLearningResourcesColumnWidthsFavorTallestCell(t *testing.T) {
+	widths := resourceColumnWidthsCM(map[string]string{
+		"工量具、设备": strings.Repeat("万用表、示波器、稳压电源、接线端子、压线钳；", 6),
+		"耗材":     "导线",
+		"其它":     "任务单",
+	})
+
+	if len(widths) != 3 {
+		t.Fatalf("expected 3 resource columns, got %d", len(widths))
+	}
+	total := widths[0] + widths[1] + widths[2]
+	if math.Abs(total-portraitTableTotalWidthCM) > 0.001 {
+		t.Fatalf("expected resource widths to fill %.2fcm, got %.2fcm", portraitTableTotalWidthCM, total)
+	}
+	if widths[0] <= widths[1] || widths[0] <= widths[2] {
+		t.Fatalf("expected longest resource cell to receive the widest column, got %v", widths)
+	}
+}
+
+func TestLearningResourcesColumnWidthsMinimizeVisualHeight(t *testing.T) {
+	widths := resourceColumnWidthsCM(map[string]string{
+		"工量具、设备": "GW4-40.5DW 隔离开关实训装置，含底座、支柱绝缘子、导电部分 A/B/C 三相触刀和触头座、接地刀闸、传动机构及配套安装工位；开口扳手、梅花扳手、套筒扳手、螺丝刀、内六角扳手、力矩扳手、游标卡尺、水平尺、塞尺、清洁刷、零部件周转盒、回路电阻测试仪、万用表、绝缘电阻表和分合闸操作检查装置。",
+		"耗材":     "螺栓、螺母、平垫、弹垫、润滑脂、导电膏、清洁布、酒精、标识标签、扎带、装配质量检查记录表和一次性防护用品。",
+		"其它":     "GW4-40.5DW 隔离开关总装图、部件装配图、装配工艺卡、力矩标准表、回路电阻测试规程、6S 现场管理检查表、任务书、工作页、技能评价表、隔离开关分合闸动作动画、三相同期性调整示意图、典型装配缺陷图片、教师示范视频和学生操作记录照片。",
+	})
+
+	if widths[0] < 7 || widths[1] > 3.3 || widths[2] < 5.5 {
+		t.Fatalf("expected sparse middle column to yield width to taller cells, got %v", widths)
 	}
 }
 
