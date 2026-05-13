@@ -29,15 +29,13 @@ func main() {
 
 const preamble = `// 中文字号转换函数
 #import "@preview/pointless-size:0.1.2": zh
-#import "@preview/cuti:0.2.1": show-cn-fakebold
-#show: show-cn-fakebold
 
 // 定义常用字体名称
 #let FONT_XBS = ("FZXiaoBiaoSong-B05") // 方正小标宋
 #let FONT_HEI = ("STHeiti") // 黑体
 #let FONT_FS = ("STFangsong") // 仿宋
 #let FONT_KAI = ("STKaiti") // 楷体
-#let FONT_SONG = ("STSong") // 宋体
+#let FONT_SONG = ("Songti SC", "STSong") // 宋体
 
 #set text(
   lang: "zh",
