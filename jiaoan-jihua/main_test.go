@@ -8,7 +8,7 @@ import (
 )
 
 func TestManifestDefinesJiaoanJihua(t *testing.T) {
-	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"category": "教育"`, `"name": "STSong"`, `"displayName": "华文宋体"`, `"url": "https://www.foundertype.com/index.php/FontInfo/index/id/135"`} {
+	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"author": "Presto-io"`, `"category": "教育"`, `"name": "STSong"`, `"displayName": "华文宋体"`, `"url": "https://www.foundertype.com/index.php/FontInfo/index/id/135"`} {
 		if !strings.Contains(manifestJSON, want) {
 			t.Fatalf("manifest missing %q", want)
 		}
