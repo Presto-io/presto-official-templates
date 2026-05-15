@@ -16,7 +16,7 @@ func TestManifestDefinesJiaoanJihua(t *testing.T) {
 }
 
 func TestExampleContainsMinimumContract(t *testing.T) {
-	for _, want := range []string{`template: "jiaoan-jihua"`, `calendar_json: "presto/calendar.json"`, `## CA6140卧式车床电气控制线路安装与调试`, `### 安技教育及旧知识回顾`, `安技教育-1`} {
+	for _, want := range []string{`template: "jiaoan-jihua"`, `calendar_json: "presto/calendar.json"`, `## CA6140卧式车床电气控制线路安装与调试`, `## X62W万能铣床电气控制线路安装与调试`, `### 安技教育及旧知识回顾`, `安技教育-1`, `控制线路布线与通电调试-6`} {
 		if !strings.Contains(exampleMD, want) {
 			t.Fatalf("example missing %q", want)
 		}

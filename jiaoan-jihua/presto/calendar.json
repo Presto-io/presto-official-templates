@@ -1,0 +1,14 @@
+[
+  { "date": "2025-09-01", "workday": true },
+  { "date": "2025-09-02", "workday": true },
+  { "date": "2025-09-03", "workday": true },
+  { "date": "2025-09-04", "workday": true },
+  { "date": "2025-09-05", "workday": true },
+  { "date": "2025-09-06", "workday": false },
+  { "date": "2025-09-07", "workday": false },
+  { "date": "2025-09-08", "workday": true },
+  { "date": "2025-09-09", "workday": true },
+  { "date": "2025-09-10", "workday": true },
+  { "date": "2025-09-11", "workday": true },
+  { "date": "2025-09-12", "workday": true }
+]
