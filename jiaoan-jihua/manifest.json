@@ -11,5 +11,19 @@
   "capabilities": { "outputInfo": true },
   "requiredFonts": [
     { "name": "STSong", "displayName": "华文宋体", "url": "https://www.foundertype.com/index.php/FontInfo/index/id/135" }
-  ]
+  ],
+  "frontmatterSchema": {
+    "school_year": { "type": "string", "default": "2025-2026" },
+    "semester": { "type": "string", "default": "第一学期" },
+    "week_range": { "type": "string", "default": "第1 - 2周" },
+    "major_name": { "type": "string" },
+    "course_name": { "type": "string" },
+    "teacher_name": { "type": "string" },
+    "class_name": { "type": "string" },
+    "prepared_by": { "type": "string" },
+    "first_teaching_day": { "type": "string", "format": "YYYY-MM-DD" },
+    "daily_hours": { "type": "number", "default": 8 },
+    "calendar_json": { "type": "string", "default": "presto/calendar.json" },
+    "template": { "type": "string", "default": "jiaoan-jihua" }
+  }
 }
