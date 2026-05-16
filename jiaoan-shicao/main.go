@@ -35,7 +35,7 @@ const preamble = `// 中文字号转换函数
 #let FONT_HEI = ("STHeiti") // 黑体
 #let FONT_FS = ("STFangsong") // 仿宋
 #let FONT_KAI = ("STKaiti") // 楷体
-#let FONT_SONG = ("Songti SC", "STSong") // 宋体
+#let FONT_SONG = "STSong" // 宋体
 
 #set text(
   lang: "zh",

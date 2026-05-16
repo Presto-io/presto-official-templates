@@ -475,7 +475,7 @@ const rendererPreamble = `// jiaoan-jihua official template
 
 #set text(
   lang: "zh",
-  font: ("STSong", "Noto Serif CJK SC", "Songti SC", "SimSun"),
+  font: "STSong",
   size: 10.5pt,
   hyphenate: false,
 )
