@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       template:
-        description: 'Template name to sync (e.g. gongwen)'
+        description: "Template name to sync (e.g. gongwen)"
         required: true
         type: string
       version:
-        description: 'Template version to sync (e.g. 1.2.1 or v1.2.1)'
+        description: "Template version to sync (e.g. 1.2.1 or v1.2.1)"
         required: true
         type: string
 
@@ -117,3 +117,19 @@ jobs:
             -f "client_payload[tag]=${RELEASE_TAG}"
 
           echo "Triggered CDN sync for ${TEMPLATE} ${RELEASE_TAG}"
+
+      - name: Trigger documentation sync workflow
+        if: steps.release.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRESTO_PAT }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          TEMPLATE: ${{ steps.release.outputs.template }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh api repos/Presto-io/Presto-doc/dispatches \
+            -f event_type=official-template-updated \
+            -f "client_payload[template]=${TEMPLATE}" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[tag]=${RELEASE_TAG}"
+
+          echo "Triggered documentation sync for ${TEMPLATE} ${RELEASE_TAG}"
