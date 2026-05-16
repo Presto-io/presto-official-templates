@@ -8,17 +8,27 @@ import (
 )
 
 func TestManifestDefinesJiaoanJihua(t *testing.T) {
-	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"author": "Presto-io"`, `"category": "教育"`, `"name": "STSong"`, `"displayName": "华文宋体"`, `"url": "https://www.foundertype.com/index.php/FontInfo/index/id/135"`, `"frontmatterSchema"`, `"school_year"`, `"first_teaching_day"`, `"calendar_json"`, `"template"`} {
+	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"author": "Presto-io"`, `"category": "教育"`, `"name": "STSong"`, `"displayName": "华文宋体"`, `"url": "https://www.foundertype.com/index.php/FontInfo/index/id/135"`, `"frontmatterSchema"`, `"major_name"`, `"first_teaching_day"`, `"template"`} {
 		if !strings.Contains(manifestJSON, want) {
 			t.Fatalf("manifest missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{`"school_year"`, `"semester"`, `"week_range"`, `"prepared_by"`, `"daily_hours"`, `"calendar_json"`} {
+		if strings.Contains(manifestJSON, unwanted) {
+			t.Fatalf("manifest should not ask for derived field %q", unwanted)
 		}
 	}
 }
 
 func TestExampleContainsMinimumContract(t *testing.T) {
-	for _, want := range []string{`template: "jiaoan-jihua"`, `calendar_json: "presto/calendar.json"`, `## CA6140卧式车床电气控制线路安装与调试`, `## X62W万能铣床电气控制线路安装与调试`, `### 安技教育及旧知识回顾`, `安技教育-1`, `控制线路布线与通电调试-6`} {
+	for _, want := range []string{`major_name: "电气自动化技术"`, `course_name: "电气设备控制线路安装与调试"`, `teacher_name: "张老师"`, `class_name: "29WG电气3"`, `first_teaching_day: "2026-03-06"`, `template: "jiaoan-jihua"`, `## CA6140卧式车床电气控制线路安装与调试`, `## X62W万能铣床电气控制线路安装与调试`, `### 安技教育及旧知识回顾`, `安技教育-1`, `控制线路布线与通电调试-6`} {
 		if !strings.Contains(exampleMD, want) {
 			t.Fatalf("example missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{`school_year:`, `semester:`, `week_range:`, `prepared_by:`, `daily_hours:`, `calendar_json:`} {
+		if strings.Contains(exampleMD, unwanted) {
+			t.Fatalf("example should not include derived field %q", unwanted)
 		}
 	}
 }
@@ -32,17 +42,17 @@ func TestConvertMarkdownStartsWithTypstDirective(t *testing.T) {
 
 func TestParseFrontMatterKeepsSourceText(t *testing.T) {
 	fm, _ := parseFrontMatter(exampleMD)
-	assertEqual(t, fm.SchoolYear, "2025-2026")
-	assertEqual(t, fm.Semester, "第一学期")
-	assertEqual(t, fm.WeekRange, "第1 - 2周")
+	assertEqual(t, fm.SchoolYear, "")
+	assertEqual(t, fm.Semester, "")
+	assertEqual(t, fm.WeekRange, "")
 	assertEqual(t, fm.MajorName, "电气自动化技术")
 	assertEqual(t, fm.CourseName, "电气设备控制线路安装与调试")
 	assertEqual(t, fm.TeacherName, "张老师")
 	assertEqual(t, fm.ClassName, "29WG电气3")
-	assertEqual(t, fm.PreparedBy, "张老师")
-	assertEqual(t, fm.FirstTeachingDay, "2025-09-01")
-	assertEqual(t, fm.DailyHours, 8)
-	assertEqual(t, fm.CalendarJSON, "presto/calendar.json")
+	assertEqual(t, fm.PreparedBy, "")
+	assertEqual(t, fm.FirstTeachingDay, "2026-03-06")
+	assertEqual(t, fm.DailyHours, 0)
+	assertEqual(t, fm.CalendarJSON, "")
 }
 
 func TestParseMarkdownTasksActivitiesAndContentRows(t *testing.T) {
@@ -122,7 +132,7 @@ func TestLoadExplicitCalendarJSONPath(t *testing.T) {
 	assertEqual(t, got.WeekdayDisplay, "6")
 }
 
-func TestDefaultCalendarPathIsPrestoCalendarJSON(t *testing.T) {
+func TestEmbeddedCalendarIsUsedWhenPathMissing(t *testing.T) {
 	dir := t.TempDir()
 	old, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(old) })
@@ -139,7 +149,75 @@ func TestDefaultCalendarPathIsPrestoCalendarJSON(t *testing.T) {
 	fm.CalendarJSON = ""
 	days, _ := loadCalendar(fm)
 	got := schedulePlan(oneRowPlan("周末训练", 1), fm, days).Tasks[0].Activities[0].Rows[0]
-	assertEqual(t, got.WeekdayDisplay, "6")
+	assertEqual(t, got.WeekdayDisplay, "5")
+}
+
+func TestParseCalendarJSONAcceptsBareDateArray(t *testing.T) {
+	days, err := parseCalendarJSON([]byte(`["2026-03-06","2026-03-07"]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(days) != 2 {
+		t.Fatalf("days = %d, want 2", len(days))
+	}
+	assertEqual(t, days[0].Date, "2026-03-06")
+	assertEqual(t, days[0].Workday, true)
+	assertEqual(t, days[1].Date, "2026-03-07")
+	assertEqual(t, days[1].Workday, true)
+}
+
+func TestDerivedFieldsRenderFromEmbeddedCalendarAndSchedule(t *testing.T) {
+	input := `---
+major_name: "电气自动化技术"
+course_name: "电气设备控制线路安装与调试"
+teacher_name: "张老师"
+class_name: "29WG电气3"
+first_teaching_day: "2025-09-01"
+template: "jiaoan-jihua"
+---
+
+## 任务
+### 环节
+内容一-8
+内容二-8
+内容三-8
+内容四-8
+内容五-8
+内容六-8
+`
+	output := convertMarkdown(input)
+	for _, want := range []string{`2025-2026学年第二学期第1 - 2周`, `制表：张老师`, `body-cell[8]`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing derived fragment %q", want)
+		}
+	}
+}
+
+func TestSchoolYearAndSemesterInferFromFirstHalfCalendarStart(t *testing.T) {
+	fm := frontMatter{TeacherName: "张老师"}
+	got := normalizeFrontMatter(fm, []calendarDay{{Date: "2025-03-01", Workday: true}})
+	assertEqual(t, got.SchoolYear, "2024-2025")
+	assertEqual(t, got.Semester, "第二学期")
+	assertEqual(t, got.PreparedBy, "张老师")
+	assertEqual(t, got.DailyHours, 8)
+}
+
+func TestFirstTeachingDayCanStartAfterCalendarStart(t *testing.T) {
+	fm := sampleFrontMatter()
+	fm.FirstTeachingDay = "2025-09-08"
+	days := []calendarDay{
+		{Date: "2025-09-01", Workday: true},
+		{Date: "2025-09-02", Workday: true},
+		{Date: "2025-09-03", Workday: true},
+		{Date: "2025-09-04", Workday: true},
+		{Date: "2025-09-05", Workday: true},
+		{Date: "2025-09-06", Workday: false},
+		{Date: "2025-09-07", Workday: false},
+		{Date: "2025-09-08", Workday: true},
+	}
+	got := schedulePlan(oneRowPlan("第二周首日", 1), fm, days).Tasks[0].Activities[0].Rows[0]
+	assertEqual(t, got.WeekDisplay, "2")
+	assertEqual(t, got.WeekdayDisplay, "1")
 }
 
 func TestMissingCalendarFallsBackToFirstTeachingDay(t *testing.T) {
@@ -148,12 +226,12 @@ func TestMissingCalendarFallsBackToFirstTeachingDay(t *testing.T) {
 	days, _ := loadCalendar(fm)
 	got := schedulePlan(oneRowPlan("首日", 1), fm, days).Tasks[0].Activities[0].Rows[0]
 	assertEqual(t, got.WeekDisplay, "1")
-	assertEqual(t, got.WeekdayDisplay, "1")
+	assertEqual(t, got.WeekdayDisplay, "5")
 }
 
 func TestBadCalendarJSONRendersWarning(t *testing.T) {
 	path := writeTempCalendar(t, `{bad`)
-	input := strings.Replace(exampleMD, `calendar_json: "presto/calendar.json"`, `calendar_json: "`+path+`"`, 1)
+	input := withCalendarPath(exampleMD, path)
 	output := convertMarkdown(input)
 	if !strings.Contains(output, badCalendarWarning) {
 		t.Fatalf("missing bad calendar warning")
@@ -216,7 +294,7 @@ func TestRenderUsesPrototypePageAndTableConstants(t *testing.T) {
 
 func TestRenderOutputsTitleMetadataAndSignature(t *testing.T) {
 	output := convertMarkdown(exampleMD)
-	for _, want := range []string{`2025-2026学年第一学期第1 - 2周`, `工学一体化课程/基本技能课程授课进度计划表`, `专业名称：电气自动化技术`, `课程名称：电气设备控制线路安装与调试`, `授课教师：张老师`, `授课班级：29WG电气3`, `系主任：`, `教研室主任：`, `制表：张老师`} {
+	for _, want := range []string{`2025-2026学年第二学期第1 - 2周`, `工学一体化课程/基本技能课程授课进度计划表`, `专业名称：电气自动化技术`, `课程名称：电气设备控制线路安装与调试`, `授课教师：张老师`, `授课班级：29WG电气3`, `系主任：`, `教研室主任：`, `制表：张老师`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output missing %q", want)
 		}
@@ -312,7 +390,7 @@ daily_hours: 8
 
 func TestBadCalendarWarningIsEscapedAndVisible(t *testing.T) {
 	path := writeTempCalendar(t, `bad`)
-	input := strings.Replace(exampleMD, `calendar_json: "presto/calendar.json"`, `calendar_json: "`+path+`"`, 1)
+	input := withCalendarPath(exampleMD, path)
 	output := convertMarkdown(input)
 	if !strings.Contains(output, badCalendarWarning) {
 		t.Fatal("warning not visible")
@@ -367,6 +445,10 @@ daily_hours: 8
 ---
 
 ` + body
+}
+
+func withCalendarPath(input string, path string) string {
+	return strings.Replace(input, `template: "jiaoan-jihua"`, `calendar_json: "`+path+`"`+"\n"+`template: "jiaoan-jihua"`, 1)
 }
 
 func writeTempCalendar(t *testing.T, body string) string {

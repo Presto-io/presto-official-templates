@@ -8,17 +8,11 @@
 
 ```markdown
 ---
-school_year: "2025-2026"
-semester: "第一学期"
-week_range: "第1 - 2周"
 major_name: "电气自动化技术"
 course_name: "电气设备控制线路安装与调试"
 teacher_name: "张老师"
 class_name: "29WG电气3"
-prepared_by: "张老师"
-first_teaching_day: "2025-09-01"
-daily_hours: 8
-calendar_json: "presto/calendar.json"
+first_teaching_day: "2026-03-06"
 template: "jiaoan-jihua"
 ---
 
@@ -32,11 +26,11 @@ template: "jiaoan-jihua"
 
 ## 输入结构
 
-- YAML front matter 描述学年、学期、课程、教师、班级、首个授课日、每日课时和日历路径。
+- YAML front matter 只需描述专业、课程、教师、班级、首个授课日和模板 ID。
 - `##` 表示学习任务。
 - `###` 表示学习环节。
 - `教学内容-数字` 表示一行教学内容及其学时；未写数字时默认 2 学时。
-- `calendar_json` 默认读取 `presto/calendar.json`，用于标记调休、周末补课等实际工作日。
+- 模板内置学校校历，自动推断学年、学期、周次范围和制表人；每日课时默认 8。
 
 ## 本地验证
 
@@ -50,5 +44,5 @@ typst compile /tmp/jiaoan-jihua.typ /tmp/jiaoan-jihua.pdf
 
 - 缺少 `##` 学习任务时，模板会输出占位提示。
 - 缺少 `###` 学习环节时，模板会输出占位提示。
-- `calendar_json` 指向不存在或无效 JSON 时，模板会回退到 `first_teaching_day` 连续排课并在输出中给出警告。
+- 兼容旧输入中的 `calendar_json`；路径不存在时会回退到内置校历，无效 JSON 会显示提示并回退。
 - 需要实操教案正文、教学活动设计或项目化教学单元时，请使用 `jiaoan-shicao`。
