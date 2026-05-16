@@ -21,6 +21,9 @@ var manifestJSON string
 //go:embed example.md
 var exampleMD string
 
+//go:embed presto/calendar.json
+var embeddedCalendarJSON string
+
 func main() {
 	cli.Run(manifestJSON, exampleMD, func(input string) string {
 		return convertMarkdown(input)
@@ -107,11 +110,16 @@ func convertMarkdown(input string) string {
 	plan := parseLearningPlanMarkdown(body)
 	plan = normalizeLearningPlan(plan, strings.TrimSpace(body) != "")
 	days, warning := loadCalendar(fm)
-	return renderTypst(fm, schedulePlan(plan, fm, days), warning)
+	fm = normalizeFrontMatter(fm, days)
+	scheduled := schedulePlan(plan, fm, days)
+	fm = inferWeekRangeFromSchedule(fm, scheduled)
+	return renderTypst(fm, scheduled, warning)
 }
 
 func outputInfo(input string) cli.OutputInfo {
 	fm, _ := parseFrontMatter(input)
+	days, _ := loadCalendar(fm)
+	fm = normalizeFrontMatter(fm, days)
 	return outputInfoFromFrontMatter(fm)
 }
 
@@ -128,10 +136,10 @@ func outputInfoFromFrontMatter(fm frontMatter) cli.OutputInfo {
 		base += " " + fm.Semester
 	}
 	authors := []string{}
-	if strings.TrimSpace(fm.PreparedBy) != "" {
-		authors = append(authors, fm.PreparedBy)
-	} else if strings.TrimSpace(fm.TeacherName) != "" {
+	if strings.TrimSpace(fm.TeacherName) != "" {
 		authors = append(authors, fm.TeacherName)
+	} else if strings.TrimSpace(fm.PreparedBy) != "" {
+		authors = append(authors, fm.PreparedBy)
 	}
 	return cli.OutputInfo{
 		SchemaVersion:  1,
@@ -276,17 +284,51 @@ func normalizeLearningPlan(plan learningPlan, hadBody bool) learningPlan {
 func loadCalendar(fm frontMatter) ([]calendarDay, string) {
 	path := strings.TrimSpace(fm.CalendarJSON)
 	if path == "" {
-		path = "presto/calendar.json"
+		days, err := parseCalendarJSON([]byte(embeddedCalendarJSON))
+		if err == nil && validCalendarDays(days) {
+			return days, ""
+		}
+		return generateDefaultCalendar(fm.FirstTeachingDay), badCalendarWarning
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return generateDefaultCalendar(fm.FirstTeachingDay), ""
+		return fallbackCalendar(fm), ""
 	}
-	var days []calendarDay
-	if err := json.Unmarshal(raw, &days); err != nil || !validCalendarDays(days) {
-		return generateDefaultCalendar(fm.FirstTeachingDay), badCalendarWarning
+	days, err := parseCalendarJSON(raw)
+	if err != nil || !validCalendarDays(days) {
+		return fallbackCalendar(fm), badCalendarWarning
 	}
 	return days, ""
+}
+
+func fallbackCalendar(fm frontMatter) []calendarDay {
+	days, err := parseCalendarJSON([]byte(embeddedCalendarJSON))
+	if err == nil && validCalendarDays(days) {
+		return days
+	}
+	return generateDefaultCalendar(fm.FirstTeachingDay)
+}
+
+func parseCalendarJSON(raw []byte) ([]calendarDay, error) {
+	var workdays []string
+	if err := json.Unmarshal(raw, &workdays); err == nil {
+		days := make([]calendarDay, 0, len(workdays))
+		for _, date := range workdays {
+			days = append(days, calendarDay{Date: date, Workday: true})
+		}
+		return days, nil
+	}
+	var days []calendarDay
+	if err := json.Unmarshal(raw, &days); err == nil {
+		return days, nil
+	}
+	var wrapped struct {
+		Days []calendarDay `json:"days"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, err
+	}
+	return wrapped.Days, nil
 }
 
 func validCalendarDays(days []calendarDay) bool {
@@ -316,6 +358,76 @@ func generateDefaultCalendar(firstTeachingDay string) []calendarDay {
 	return days
 }
 
+func normalizeFrontMatter(fm frontMatter, days []calendarDay) frontMatter {
+	if fm.DailyHours <= 0 {
+		fm.DailyHours = 8
+	}
+	if strings.TrimSpace(fm.PreparedBy) == "" {
+		fm.PreparedBy = fm.TeacherName
+	}
+	if len(days) > 0 {
+		if start, err := parseISODate(days[0].Date); err == nil {
+			if strings.TrimSpace(fm.SchoolYear) == "" {
+				fm.SchoolYear = inferSchoolYear(start)
+			}
+			if strings.TrimSpace(fm.Semester) == "" {
+				fm.Semester = inferSemester(start)
+			}
+		}
+	}
+	return fm
+}
+
+func inferSchoolYear(calendarStart time.Time) string {
+	year := calendarStart.Year()
+	if calendarStart.Month() <= time.June {
+		return fmt.Sprintf("%d-%d", year-1, year)
+	}
+	return fmt.Sprintf("%d-%d", year, year+1)
+}
+
+func inferSemester(calendarStart time.Time) string {
+	if calendarStart.Month() <= time.June {
+		return "第二学期"
+	}
+	return "第一学期"
+}
+
+func inferWeekRangeFromSchedule(fm frontMatter, plan scheduledPlan) frontMatter {
+	if strings.TrimSpace(fm.WeekRange) != "" {
+		return fm
+	}
+	minWeek := 0
+	maxWeek := 0
+	for _, task := range plan.Tasks {
+		for _, activity := range task.Activities {
+			for _, row := range activity.Rows {
+				for _, part := range strings.Fields(row.WeekDisplay) {
+					week, err := strconv.Atoi(part)
+					if err != nil {
+						continue
+					}
+					if minWeek == 0 || week < minWeek {
+						minWeek = week
+					}
+					if week > maxWeek {
+						maxWeek = week
+					}
+				}
+			}
+		}
+	}
+	if minWeek == 0 {
+		return fm
+	}
+	if minWeek == maxWeek {
+		fm.WeekRange = fmt.Sprintf("第%d周", minWeek)
+	} else {
+		fm.WeekRange = fmt.Sprintf("第%d - %d周", minWeek, maxWeek)
+	}
+	return fm
+}
+
 func schedulePlan(plan learningPlan, fm frontMatter, days []calendarDay) scheduledPlan {
 	dailyHours := fm.DailyHours
 	if dailyHours <= 0 {
@@ -324,14 +436,17 @@ func schedulePlan(plan learningPlan, fm frontMatter, days []calendarDay) schedul
 	if len(days) == 0 {
 		days = generateDefaultCalendar(fm.FirstTeachingDay)
 	}
-	anchor, err := parseISODate(fm.FirstTeachingDay)
+	anchor, err := parseISODate(days[0].Date)
 	if err != nil {
-		anchor, _ = parseISODate(days[0].Date)
+		anchor, err = parseISODate(fm.FirstTeachingDay)
+		if err != nil {
+			anchor = time.Now()
+		}
 	}
 	weekOneMonday := mondayOf(anchor)
 
 	result := scheduledPlan{Hint: plan.Hint}
-	cursor := 0
+	days, cursor := alignCalendarToFirstTeachingDay(days, fm.FirstTeachingDay)
 	remainingToday := 0
 	for _, task := range plan.Tasks {
 		scheduledTask := scheduledTask{Name: task.Name}
@@ -349,6 +464,29 @@ func schedulePlan(plan learningPlan, fm frontMatter, days []calendarDay) schedul
 		result.Tasks = append(result.Tasks, scheduledTask)
 	}
 	return result
+}
+
+func alignCalendarToFirstTeachingDay(days []calendarDay, firstTeachingDay string) ([]calendarDay, int) {
+	start, err := parseISODate(firstTeachingDay)
+	if err != nil || len(days) == 0 {
+		return days, 0
+	}
+	for len(days) > 0 {
+		last, err := parseISODate(days[len(days)-1].Date)
+		if err != nil || !dateOnly(last).Before(dateOnly(start)) {
+			break
+		}
+		last = last.AddDate(0, 0, 1)
+		workday := last.Weekday() >= time.Monday && last.Weekday() <= time.Friday
+		days = append(days, calendarDay{Date: last.Format("2006-01-02"), Workday: workday})
+	}
+	for i, day := range days {
+		parsed, err := parseISODate(day.Date)
+		if err == nil && !dateOnly(parsed).Before(dateOnly(start)) {
+			return days, i
+		}
+	}
+	return days, len(days)
 }
 
 func scheduleRow(row contentRow, days []calendarDay, cursor int, remainingToday int, dailyHours int, weekOneMonday time.Time) (scheduledRow, int, int) {
