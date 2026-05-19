@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -213,9 +214,8 @@ course_name: 'PLC 实训 #1]'
 course_attribute: 基本技能课程
 textbook_name: 电气控制
 class_name: 机电 1 班
-total_hours: 12
 teacher_name: 张三
-use_time: 2026 年 5 月
+first_teaching_day: 2026-05-12
 ---
 
 ## 学习任务分析
@@ -223,6 +223,22 @@ use_time: 2026 年 5 月
 学习任务：PLC 接线
 课时：4
 起止日期：5 月 1 日
+
+## 教学活动设计
+
+### PLC 认知——接线准备
+
+#### 活动一
+
+##### 12H
+
+学习内容
+
+学生活动
+
+教师活动
+
+教学方法
 `)
 
 	for _, label := range []string{"教学设计方案（二）", "课程名称", "课程属性", "教材名称", "教学班级", "计划总课时", "教师姓名", "使用时间"} {
@@ -235,6 +251,9 @@ use_time: 2026 年 5 月
 	}
 	if !strings.Contains(output, "☑基本技能课程") || !strings.Contains(output, "□工学一体化课程") {
 		t.Fatal("expected 基本技能课程 selection state")
+	}
+	if !strings.Contains(output, "2026年5月——2026年5月") {
+		t.Fatal("expected use time to be inferred from first_teaching_day and activity hours")
 	}
 }
 
@@ -269,6 +288,66 @@ course_name: 'A #set page()] \'
 		if !strings.Contains(missing, escaped) {
 			t.Fatalf("expected cover output to contain escaped fragment %q", escaped)
 		}
+	}
+}
+
+func TestInferredCoverFieldsUseBodyHoursAndCalendarJSON(t *testing.T) {
+	calendarPath := t.TempDir() + "/calendar.json"
+	if err := os.WriteFile(calendarPath, []byte(`["2026-05-29","2026-06-02"]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	input := `---
+course_name: PLC 综合实训
+course_attribute: 基本技能课程
+teacher_name: 张三
+first_teaching_day: 2026-05-29
+calendar_json: "` + calendarPath + `"
+---
+
+## 教学活动设计
+
+### PLC 认知——接线准备
+
+#### 活动一
+
+##### 12H
+
+学习内容
+
+学生活动
+
+教师活动
+
+教学方法
+`
+	output := convertMarkdown(input)
+	fm, body := parseLessonFrontMatter(input)
+	inferred := inferLessonFrontMatter(fm, parseMarkdown(body))
+
+	if inferred.TotalHours != "12" {
+		t.Fatalf("expected total hours to infer from activity rows, got %q", inferred.TotalHours)
+	}
+	if inferred.UseTime != "2026年5月——2026年6月" {
+		t.Fatalf("expected use time to span custom workday calendar months, got %q", inferred.UseTime)
+	}
+	for _, want := range []string{"计划总课时", "12", "使用时间", "2026年5月——2026年6月"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain inferred cover field %q", want)
+		}
+	}
+}
+
+func TestLegacyUseTimeDateRangeDisplaysMonthRange(t *testing.T) {
+	output := convertMarkdown(`---
+course_name: PLC 综合实训
+teacher_name: 张三
+use_time: "2026 年 5 月 12 日 —— 2026 年 5 月 15 日"
+---
+`)
+
+	if !strings.Contains(output, "2026年5月——2026年5月") {
+		t.Fatal("expected legacy use_time date range to display as month range without days")
 	}
 }
 
@@ -459,10 +538,14 @@ PLC 的基本组成：CPU 模块、输入模块、输出模块、电源模块。
 func TestEmbeddedExampleRendersCompleteTeachingDesign(t *testing.T) {
 	fm, body := parseLessonFrontMatter(exampleMD)
 	sections := parseMarkdown(body)
+	inferred := inferLessonFrontMatter(fm, sections)
 	output := convertMarkdown(exampleMD)
 
-	if fm.TotalHours != "8" {
-		t.Fatalf("expected embedded example total_hours to be 8, got %q", fm.TotalHours)
+	if fm.TotalHours != "" {
+		t.Fatalf("expected embedded example to omit explicit total_hours, got %q", fm.TotalHours)
+	}
+	if inferred.TotalHours != "8" {
+		t.Fatalf("expected embedded example total_hours to infer as 8, got %q", inferred.TotalHours)
 	}
 	assertSectionOrder(t, sections, []string{"学习任务分析", "教学活动设计", "学业评价"})
 	if got := countActivityRows(sections); got < 8 {
@@ -559,7 +642,7 @@ func TestEmbeddedExampleReleaseFormatSignals(t *testing.T) {
 		"columns: (cover-label-width, cover-value-width)",
 		"box(width: cover-label-width, height: 1.50cm, inset: (bottom: 0.16cm))",
 		"box(width: cover-value-width, height: 1.50cm, stroke: (bottom: 0.5pt), inset: (bottom: 0.16cm))",
-		"2026 年 5 月 12 日 —— 2026 年 5 月 15 日",
+		"2026年3月——2026年3月",
 		"#set page(",
 	} {
 		if !strings.Contains(output, want) {
@@ -688,9 +771,8 @@ course_name: PLC 综合实训
 course_attribute: 工学一体化课程
 textbook_name: 电气控制
 class_name: 机电 1 班
-total_hours: 8
 teacher_name: 李四
-use_time: 2026 年 5 月
+first_teaching_day: 2026-05-12
 ---
 
 ## 学习任务分析

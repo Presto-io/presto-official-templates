@@ -2,10 +2,14 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/Presto-io/presto-official-templates/internal/cli"
@@ -18,6 +22,9 @@ var manifestJSON string
 
 //go:embed example.md
 var exampleMD string
+
+//go:embed presto/calendar.json
+var embeddedCalendarJSON string
 
 func main() {
 	cli.Run(manifestJSON, exampleMD, func(input string) string {
@@ -128,13 +135,21 @@ type tableContinuation struct {
 }
 
 type lessonFrontMatter struct {
-	CourseName      string `yaml:"course_name"`
-	CourseAttribute string `yaml:"course_attribute"`
-	TextbookName    string `yaml:"textbook_name"`
-	ClassName       string `yaml:"class_name"`
-	TotalHours      string `yaml:"total_hours"`
-	TeacherName     string `yaml:"teacher_name"`
-	UseTime         string `yaml:"use_time"`
+	CourseName       string `yaml:"course_name"`
+	CourseAttribute  string `yaml:"course_attribute"`
+	TextbookName     string `yaml:"textbook_name"`
+	ClassName        string `yaml:"class_name"`
+	TotalHours       string `yaml:"total_hours"`
+	TeacherName      string `yaml:"teacher_name"`
+	UseTime          string `yaml:"use_time"`
+	FirstTeachingDay string `yaml:"first_teaching_day"`
+	DailyHours       int    `yaml:"daily_hours"`
+	CalendarJSON     string `yaml:"calendar_json"`
+}
+
+type calendarDay struct {
+	Date    string `json:"date"`
+	Workday bool   `json:"workday"`
 }
 
 func parseLessonFrontMatter(input string) (lessonFrontMatter, string) {
@@ -165,13 +180,16 @@ func parseLessonFrontMatter(input string) (lessonFrontMatter, string) {
 		return lessonFrontMatter{}, body
 	}
 	fm = lessonFrontMatter{
-		CourseName:      yamlString(raw, "course_name"),
-		CourseAttribute: yamlString(raw, "course_attribute"),
-		TextbookName:    yamlString(raw, "textbook_name"),
-		ClassName:       yamlString(raw, "class_name"),
-		TotalHours:      yamlString(raw, "total_hours"),
-		TeacherName:     yamlString(raw, "teacher_name"),
-		UseTime:         yamlString(raw, "use_time"),
+		CourseName:       yamlString(raw, "course_name"),
+		CourseAttribute:  yamlString(raw, "course_attribute"),
+		TextbookName:     yamlString(raw, "textbook_name"),
+		ClassName:        yamlString(raw, "class_name"),
+		TotalHours:       yamlString(raw, "total_hours"),
+		TeacherName:      yamlString(raw, "teacher_name"),
+		UseTime:          yamlString(raw, "use_time"),
+		FirstTeachingDay: yamlString(raw, "first_teaching_day"),
+		DailyHours:       yamlInt(raw, "daily_hours"),
+		CalendarJSON:     yamlString(raw, "calendar_json"),
 	}
 	return fm, body
 }
@@ -184,16 +202,34 @@ func yamlString(raw map[string]interface{}, key string) string {
 	if !ok || value == nil {
 		return ""
 	}
+	if parsed, ok := value.(time.Time); ok {
+		return parsed.Format("2006-01-02")
+	}
 	return fmt.Sprintf("%v", value)
+}
+
+func yamlInt(raw map[string]interface{}, key string) int {
+	value := strings.TrimSpace(yamlString(raw, key))
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func convertMarkdown(input string) string {
 	fm, body := parseLessonFrontMatter(input)
-	return generateTypstWithFrontMatter(fm, parseMarkdown(body))
+	sections := parseMarkdown(body)
+	fm = inferLessonFrontMatter(fm, sections)
+	return generateTypstWithFrontMatter(fm, sections)
 }
 
 func outputInfo(input string) cli.OutputInfo {
-	fm, _ := parseLessonFrontMatter(input)
+	fm, body := parseLessonFrontMatter(input)
+	fm = inferLessonFrontMatter(fm, parseMarkdown(body))
 	title := strings.TrimSpace(fm.CourseName)
 	if title == "" {
 		title = "实操教案"
@@ -227,8 +263,267 @@ func outputInfo(input string) cli.OutputInfo {
 			"courseAttribute": fm.CourseAttribute,
 			"className":       fm.ClassName,
 			"totalHours":      fm.TotalHours,
+			"useTime":         fm.UseTime,
 		},
 	}
+}
+
+func inferLessonFrontMatter(fm lessonFrontMatter, sections []DocumentSection) lessonFrontMatter {
+	if total := totalActivityHours(sections); total > 0 {
+		fm.TotalHours = formatHourTotal(total)
+	}
+	if start, end, ok := inferTeachingDateRange(fm, sections); ok {
+		fm.UseTime = formatMonthRange(start, end)
+	} else if strings.TrimSpace(fm.UseTime) != "" {
+		fm.UseTime = normalizeUseTimeMonthRange(fm.UseTime)
+	}
+	return fm
+}
+
+func totalActivityHours(sections []DocumentSection) float64 {
+	total := 0.0
+	for _, hours := range activityHourValues(sections) {
+		total += hours
+	}
+	return total
+}
+
+func activityHourValues(sections []DocumentSection) []float64 {
+	values := []float64{}
+	for _, section := range sections {
+		if sectionKind(section.H2Title) != "activity" {
+			continue
+		}
+		for _, item := range section.Items {
+			if item.Table == nil {
+				continue
+			}
+			for _, h4 := range item.Table.H4Blocks {
+				for _, h5 := range h4.H5Blocks {
+					if hours, ok := parseLessonHours(h5.Title); ok && hours > 0 {
+						values = append(values, hours)
+					}
+				}
+			}
+		}
+	}
+	return values
+}
+
+func parseLessonHours(value string) (float64, bool) {
+	normalized := strings.TrimSpace(value)
+	normalized = strings.TrimSuffix(strings.TrimSuffix(normalized, "H"), "h")
+	normalized = strings.TrimSuffix(strings.TrimSuffix(normalized, "课时"), "小时")
+	hours, err := strconv.ParseFloat(strings.TrimSpace(normalized), 64)
+	return hours, err == nil
+}
+
+func formatHourTotal(total float64) string {
+	if math.Abs(total-math.Round(total)) < 1e-9 {
+		return strconv.Itoa(int(math.Round(total)))
+	}
+	return strconv.FormatFloat(total, 'f', -1, 64)
+}
+
+func inferTeachingDateRange(fm lessonFrontMatter, sections []DocumentSection) (time.Time, time.Time, bool) {
+	if strings.TrimSpace(fm.FirstTeachingDay) == "" {
+		return time.Time{}, time.Time{}, false
+	}
+	hourValues := activityHourValues(sections)
+	if len(hourValues) == 0 {
+		return time.Time{}, time.Time{}, false
+	}
+
+	dailyHours := fm.DailyHours
+	if dailyHours <= 0 {
+		dailyHours = 8
+	}
+	days := loadLessonCalendar(fm)
+	if len(days) == 0 {
+		days = generateDefaultCalendar(fm.FirstTeachingDay)
+	}
+
+	days, cursor := alignCalendarToFirstTeachingDay(days, fm.FirstTeachingDay)
+	remainingToday := 0.0
+	var startDate time.Time
+	var endDate time.Time
+	started := false
+
+	for _, rowHours := range hourValues {
+		hoursLeft := rowHours
+		for hoursLeft > 0 {
+			for {
+				if cursor >= len(days) {
+					days = append(days, nextGeneratedCalendarDay(days, fm.FirstTeachingDay))
+				}
+				if cursor < len(days) && days[cursor].Workday {
+					break
+				}
+				cursor++
+			}
+			if remainingToday <= 0 {
+				remainingToday = float64(dailyHours)
+			}
+			dayDate, err := parseISODate(days[cursor].Date)
+			if err != nil {
+				cursor++
+				remainingToday = 0
+				continue
+			}
+			if !started {
+				startDate = dayDate
+				started = true
+			}
+			endDate = dayDate
+
+			consume := hoursLeft
+			if consume > remainingToday {
+				consume = remainingToday
+			}
+			hoursLeft -= consume
+			remainingToday -= consume
+			if remainingToday <= 0 {
+				cursor++
+			}
+		}
+	}
+	return startDate, endDate, started
+}
+
+func loadLessonCalendar(fm lessonFrontMatter) []calendarDay {
+	path := strings.TrimSpace(fm.CalendarJSON)
+	if path != "" {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			if days, err := parseCalendarJSON(raw); err == nil && validCalendarDays(days) {
+				return days
+			}
+		}
+	}
+	if days, err := parseCalendarJSON([]byte(embeddedCalendarJSON)); err == nil && validCalendarDays(days) {
+		return days
+	}
+	return generateDefaultCalendar(fm.FirstTeachingDay)
+}
+
+func parseCalendarJSON(raw []byte) ([]calendarDay, error) {
+	var workdays []string
+	if err := json.Unmarshal(raw, &workdays); err == nil {
+		days := make([]calendarDay, 0, len(workdays))
+		for _, date := range workdays {
+			days = append(days, calendarDay{Date: date, Workday: true})
+		}
+		return days, nil
+	}
+	var days []calendarDay
+	if err := json.Unmarshal(raw, &days); err == nil {
+		return days, nil
+	}
+	var wrapped struct {
+		Days []calendarDay `json:"days"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, err
+	}
+	return wrapped.Days, nil
+}
+
+func validCalendarDays(days []calendarDay) bool {
+	if len(days) == 0 {
+		return false
+	}
+	for _, day := range days {
+		if _, err := parseISODate(day.Date); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func generateDefaultCalendar(firstTeachingDay string) []calendarDay {
+	start, err := parseISODate(firstTeachingDay)
+	if err != nil {
+		start = time.Now()
+	}
+	days := make([]calendarDay, 0, 260)
+	for len(days) < 260 {
+		workday := start.Weekday() >= time.Monday && start.Weekday() <= time.Friday
+		days = append(days, calendarDay{Date: start.Format("2006-01-02"), Workday: workday})
+		start = start.AddDate(0, 0, 1)
+	}
+	return days
+}
+
+func alignCalendarToFirstTeachingDay(days []calendarDay, firstTeachingDay string) ([]calendarDay, int) {
+	start, err := parseISODate(firstTeachingDay)
+	if err != nil || len(days) == 0 {
+		return days, 0
+	}
+	for len(days) > 0 {
+		last, err := parseISODate(days[len(days)-1].Date)
+		if err != nil || !dateOnly(last).Before(dateOnly(start)) {
+			break
+		}
+		last = last.AddDate(0, 0, 1)
+		workday := last.Weekday() >= time.Monday && last.Weekday() <= time.Friday
+		days = append(days, calendarDay{Date: last.Format("2006-01-02"), Workday: workday})
+	}
+	for i, day := range days {
+		parsed, err := parseISODate(day.Date)
+		if err == nil && !dateOnly(parsed).Before(dateOnly(start)) {
+			return days, i
+		}
+	}
+	return days, len(days)
+}
+
+func nextGeneratedCalendarDay(days []calendarDay, firstTeachingDay string) calendarDay {
+	var last time.Time
+	var err error
+	if len(days) > 0 {
+		last, err = parseISODate(days[len(days)-1].Date)
+	}
+	if err != nil || len(days) == 0 {
+		last, err = parseISODate(firstTeachingDay)
+	}
+	if err != nil {
+		last = time.Now()
+	}
+	next := last.AddDate(0, 0, 1)
+	return calendarDay{
+		Date:    next.Format("2006-01-02"),
+		Workday: next.Weekday() >= time.Monday && next.Weekday() <= time.Friday,
+	}
+}
+
+func parseISODate(value string) (time.Time, error) {
+	return time.ParseInLocation("2006-01-02", strings.TrimSpace(value), time.Local)
+}
+
+func dateOnly(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+func formatMonthRange(start, end time.Time) string {
+	return fmt.Sprintf("%d年%d月——%d年%d月", start.Year(), int(start.Month()), end.Year(), int(end.Month()))
+}
+
+func normalizeUseTimeMonthRange(value string) string {
+	matches := regexp.MustCompile(`(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*\d{1,2}\s*日)?`).FindAllStringSubmatch(value, -1)
+	if len(matches) == 0 {
+		return strings.TrimSpace(value)
+	}
+	if len(matches) == 1 {
+		year, _ := strconv.Atoi(matches[0][1])
+		month, _ := strconv.Atoi(matches[0][2])
+		return fmt.Sprintf("%d年%d月", year, month)
+	}
+	startYear, _ := strconv.Atoi(matches[0][1])
+	startMonth, _ := strconv.Atoi(matches[0][2])
+	endYear, _ := strconv.Atoi(matches[len(matches)-1][1])
+	endMonth, _ := strconv.Atoi(matches[len(matches)-1][2])
+	return fmt.Sprintf("%d年%d月——%d年%d月", startYear, startMonth, endYear, endMonth)
 }
 
 func normalizeOutputHours(value string) string {
@@ -257,9 +552,7 @@ func (fm lessonFrontMatter) hasCoverFields() bool {
 		fm.CourseAttribute != "" ||
 		fm.TextbookName != "" ||
 		fm.ClassName != "" ||
-		fm.TotalHours != "" ||
-		fm.TeacherName != "" ||
-		fm.UseTime != ""
+		fm.TeacherName != ""
 }
 
 func (fm lessonFrontMatter) fieldValue(key string) string {
