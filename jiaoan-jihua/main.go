@@ -143,7 +143,7 @@ func outputInfoFromFrontMatter(fm frontMatter) cli.OutputInfo {
 	}
 	return cli.OutputInfo{
 		SchemaVersion:  1,
-		OutputBaseName: cleanFilenameBase(base),
+		OutputBaseName: cli.CleanFilenameBase(base),
 		PreviewTitle:   title,
 		Document: cli.DocumentInfo{
 			Title:       title,
@@ -162,15 +162,6 @@ func outputInfoFromFrontMatter(fm frontMatter) cli.OutputInfo {
 			"className":  fm.ClassName,
 		},
 	}
-}
-
-func cleanFilenameBase(value string) string {
-	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
-	value = strings.TrimSpace(replacer.Replace(value))
-	if value == "" {
-		return "output"
-	}
-	return value
 }
 
 func parseFrontMatter(input string) (frontMatter, string) {

@@ -6,9 +6,11 @@ import (
 	"html"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/Presto-io/presto-official-templates/internal/cli"
 	"github.com/Presto-io/presto-official-templates/internal/typst"
@@ -150,24 +152,40 @@ func convertPunctuation(text string) string {
 	for _, loc := range markerPattern.FindAllStringIndex(text, -1) {
 		skipSpans = append(skipSpans, span{loc[0], loc[1]})
 	}
-
-	inSkip := func(pos int) bool {
-		for _, s := range skipSpans {
-			if pos >= s.start && pos < s.end {
-				return true
-			}
+	sort.Slice(skipSpans, func(i, j int) bool {
+		if skipSpans[i].start == skipSpans[j].start {
+			return skipSpans[i].end < skipSpans[j].end
 		}
-		return false
+		return skipSpans[i].start < skipSpans[j].start
+	})
+	if len(skipSpans) > 1 {
+		merged := skipSpans[:0]
+		for _, s := range skipSpans {
+			lastIdx := len(merged) - 1
+			if lastIdx >= 0 && s.start <= merged[lastIdx].end {
+				if s.end > merged[lastIdx].end {
+					merged[lastIdx].end = s.end
+				}
+				continue
+			}
+			merged = append(merged, s)
+		}
+		skipSpans = merged
 	}
 
-	runes := []rune(text)
 	var buf strings.Builder
 	buf.Grow(len(text))
 
+	runes := []rune(text)
+	spanIdx := 0
+	bytePos := 0
 	for i, r := range runes {
-		bytePos := len(string(runes[:i]))
-		if inSkip(bytePos) {
+		for spanIdx < len(skipSpans) && bytePos >= skipSpans[spanIdx].end {
+			spanIdx++
+		}
+		if spanIdx < len(skipSpans) && bytePos >= skipSpans[spanIdx].start && bytePos < skipSpans[spanIdx].end {
 			buf.WriteRune(r)
+			bytePos += utf8.RuneLen(r)
 			continue
 		}
 
@@ -192,6 +210,7 @@ func convertPunctuation(text string) string {
 		default:
 			buf.WriteRune(r)
 		}
+		bytePos += utf8.RuneLen(r)
 	}
 	return buf.String()
 }
@@ -1252,7 +1271,7 @@ func main() {
 		}
 		return cli.OutputInfo{
 			SchemaVersion:  1,
-			OutputBaseName: cleanFilenameBase(title),
+			OutputBaseName: cli.CleanFilenameBase(title),
 			PreviewTitle:   title,
 			Document: cli.DocumentInfo{
 				Title:       title,
@@ -1265,13 +1284,4 @@ func main() {
 			},
 		}
 	})
-}
-
-func cleanFilenameBase(value string) string {
-	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
-	value = strings.TrimSpace(replacer.Replace(value))
-	if value == "" {
-		return "output"
-	}
-	return value
 }

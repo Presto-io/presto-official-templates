@@ -90,6 +90,7 @@ const coverFieldBottomInset = "0.16cm"
 const coverFieldFontSize = "zh(4)"
 
 var chineseYearPattern = regexp.MustCompile(`\d{4}\s*年\s*`)
+var useTimeMonthPattern = regexp.MustCompile(`(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*\d{1,2}\s*日)?`)
 
 // H5Block 存储五级标题及其内容
 type H5Block struct {
@@ -251,7 +252,7 @@ func outputInfo(input string) cli.OutputInfo {
 	}
 	return cli.OutputInfo{
 		SchemaVersion:  1,
-		OutputBaseName: cleanFilenameBase(base),
+		OutputBaseName: cli.CleanFilenameBase(base),
 		PreviewTitle:   title,
 		Document: cli.DocumentInfo{
 			Title:       title,
@@ -517,7 +518,7 @@ func formatMonthRange(start, end time.Time) string {
 }
 
 func normalizeUseTimeMonthRange(value string) string {
-	matches := regexp.MustCompile(`(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*\d{1,2}\s*日)?`).FindAllStringSubmatch(value, -1)
+	matches := useTimeMonthPattern.FindAllStringSubmatch(value, -1)
 	if len(matches) == 0 {
 		return strings.TrimSpace(value)
 	}
@@ -543,15 +544,6 @@ func normalizeOutputHours(value string) string {
 		return hours
 	}
 	return hours + "H"
-}
-
-func cleanFilenameBase(value string) string {
-	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
-	value = strings.TrimSpace(replacer.Replace(value))
-	if value == "" {
-		return "output"
-	}
-	return value
 }
 
 func (fm lessonFrontMatter) hasCoverFields() bool {

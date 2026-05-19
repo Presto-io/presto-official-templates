@@ -1,12 +1,23 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"math"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestExampleOutputGoldenHash(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
+	const want = "9387c885ec62990d5a93024e3e56763921fcfe472c0136117ccbcf2fb337374e"
+	if got != want {
+		t.Fatalf("example output changed: got %s, want %s", got, want)
+	}
+}
 
 func writeTempCalendar(t *testing.T, content string) string {
 	t.Helper()

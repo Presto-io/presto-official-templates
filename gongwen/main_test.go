@@ -1,9 +1,21 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestExampleOutputGoldenHash(t *testing.T) {
+	fm, body := parseFrontMatter(exampleMD)
+	output := convert(fm, body)
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
+	const want = "80c4c7d4bb923e5935e115332f86d1228b3e4688f20856dc745b9841c7bea751"
+	if got != want {
+		t.Fatalf("example output changed: got %s, want %s", got, want)
+	}
+}
 
 func TestSingleImagesUseFloatingPlacement(t *testing.T) {
 	output := convertBody(`![流程图](assets/process.png)

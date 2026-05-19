@@ -1,11 +1,22 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestExampleOutputGoldenHash(t *testing.T) {
+	output := convertMarkdown(exampleMD)
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
+	const want = "9e6e813408fd600c9da38af7e5f9d5f5b6be67ce411ca22e44df2575e3109388"
+	if got != want {
+		t.Fatalf("example output changed: got %s, want %s", got, want)
+	}
+}
 
 func TestManifestDefinesJiaoanJihua(t *testing.T) {
 	for _, want := range []string{`"name": "jiaoan-jihua"`, `"displayName": "授课进度计划表模板"`, `"author": "Presto-io"`, `"category": "教育"`, `"name": "STSong"`, `"displayName": "华文宋体"`, `"url": "https://www.foundertype.com/index.php/FontInfo/index/id/135"`, `"frontmatterSchema"`, `"major_name"`, `"first_teaching_day"`, `"template"`} {

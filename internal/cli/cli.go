@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 type DocumentInfo struct {
@@ -85,4 +86,15 @@ func Run(manifestJSON, exampleMD string, convert func(string) string, info func(
 	}
 
 	fmt.Print(convert(string(input)))
+}
+
+// CleanFilenameBase returns a filesystem-safe basename while preserving the
+// visible title text as much as possible.
+func CleanFilenameBase(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
+	value = strings.TrimSpace(replacer.Replace(value))
+	if value == "" {
+		return "output"
+	}
+	return value
 }
