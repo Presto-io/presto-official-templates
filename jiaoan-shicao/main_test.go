@@ -446,7 +446,7 @@ first_teaching_day: 2026-05-29
 calendar_json: "` + writeTempCalendar(t, `["2026-05-29","2026-06-02"]`) + `"
 ---
 
-## 学习任务分析——PLC 综合接线
+## PLC 综合接线
 
 ### 一、学习任务描述
 
@@ -497,6 +497,9 @@ calendar_json: "` + writeTempCalendar(t, `["2026-05-29","2026-06-02"]`) + `"
 	}
 	if strings.Contains(output, "#section-title[学习任务分析——PLC 综合接线]") {
 		t.Fatal("expected rendered analysis section title to omit task suffix")
+	}
+	if strings.Contains(output, "#section-title[PLC 综合接线]") {
+		t.Fatal("expected bare task heading to render as learning-analysis section title")
 	}
 }
 
@@ -758,7 +761,14 @@ func assertSectionOrder(t *testing.T, sections []DocumentSection, want []string)
 	t.Helper()
 	next := 0
 	for _, section := range sections {
-		if next < len(want) && strings.HasPrefix(section.H2Title, want[next]) {
+		if next >= len(want) {
+			break
+		}
+		matched := strings.HasPrefix(section.H2Title, want[next])
+		if want[next] == "学习任务分析" && sectionKind(section) == "analysis" {
+			matched = true
+		}
+		if matched {
 			next++
 		}
 	}

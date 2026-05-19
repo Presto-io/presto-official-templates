@@ -298,7 +298,7 @@ func totalActivityHours(sections []DocumentSection) float64 {
 func activityHourValues(sections []DocumentSection) []float64 {
 	values := []float64{}
 	for _, section := range sections {
-		if sectionKind(section.H2Title) != "activity" {
+		if sectionKind(section) != "activity" {
 			continue
 		}
 		for _, item := range section.Items {
@@ -632,7 +632,7 @@ func parseMarkdown(content string) []DocumentSection {
 			continue
 		}
 
-		if isSpecialSection(currentSection.H2Title) {
+		if isSpecialSection(*currentSection) {
 			currentTable = nil
 			currentH4 = nil
 			currentH5 = nil
@@ -785,7 +785,7 @@ func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSecti
 	}
 
 	for sectionIdx, section := range sections {
-		kind := sectionKind(section.H2Title)
+		kind := sectionKind(section)
 		if kind == "cover" && coverRendered {
 			continue
 		}
@@ -1055,7 +1055,7 @@ func activitySectionTitle(title string) string {
 }
 
 func analysisSectionTitle(title string) string {
-	if strings.Contains(normalizeTitle(title), "学习任务分析") {
+	if strings.TrimSpace(title) != "" {
 		return "学习任务分析"
 	}
 	return title
@@ -1068,6 +1068,9 @@ func learningTaskNameFromAnalysisTitle(title string) string {
 		if len(parts) == 2 && strings.Contains(normalizeTitle(parts[0]), "学习任务分析") {
 			return strings.TrimSpace(parts[1])
 		}
+	}
+	if !strings.Contains(normalizeTitle(title), "学习任务分析") {
+		return title
 	}
 	return ""
 }
@@ -1303,12 +1306,12 @@ type evaluationRow struct {
 	Method  string
 }
 
-func sectionKind(title string) string {
-	normalized := normalizeTitle(title)
+func sectionKind(section DocumentSection) string {
+	normalized := normalizeTitle(section.H2Title)
 	switch {
 	case strings.Contains(normalized, "教学设计方案（二）"):
 		return "cover"
-	case strings.Contains(normalized, "学习任务分析"):
+	case strings.Contains(normalized, "学习任务分析") || hasLearningTaskAnalysisBlocks(section.RawLines):
 		return "analysis"
 	case strings.Contains(normalized, "学业评价"):
 		return "evaluation"
@@ -1317,8 +1320,31 @@ func sectionKind(title string) string {
 	}
 }
 
-func isSpecialSection(title string) bool {
-	return sectionKind(title) != "activity"
+func hasLearningTaskAnalysisBlocks(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "### ") {
+			title := strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))
+			if isLearningTaskAnalysisBlockTitle(title) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isLearningTaskAnalysisBlockTitle(title string) bool {
+	normalized := normalizeTitle(title)
+	for _, want := range []string{"一、学习任务描述", "二、学习目标", "三、学习内容", "四、学生情况分析", "五、学习资源"} {
+		if normalized == normalizeTitle(want) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSpecialSection(section DocumentSection) bool {
+	return sectionKind(section) != "activity"
 }
 
 func parseKeyValueLines(lines []string) map[string]string {
