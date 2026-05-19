@@ -8,6 +8,15 @@ import (
 	"testing"
 )
 
+func writeTempCalendar(t *testing.T, content string) string {
+	t.Helper()
+	calendarPath := t.TempDir() + "/calendar.json"
+	if err := os.WriteFile(calendarPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return calendarPath
+}
+
 func TestPreambleEvaluatesSectionHeadingStyle(t *testing.T) {
 	if !strings.Contains(preamble, "#let section-title(body)") || !strings.Contains(preamble, "#align(center)[#body]") {
 		t.Fatal("expected preamble to define a centered custom section-title helper")
@@ -428,6 +437,66 @@ func TestLearningTaskAnalysisFieldsBlocksResourcesAndEscaping(t *testing.T) {
 	}
 	if !strings.Contains(output, "inset: 5pt") {
 		t.Fatal("expected learning resource cells to preserve default content padding")
+	}
+}
+
+func TestLearningTaskAnalysisInfersTaskHoursAndDateRange(t *testing.T) {
+	input := `---
+first_teaching_day: 2026-05-29
+calendar_json: "` + writeTempCalendar(t, `["2026-05-29","2026-06-02"]`) + `"
+---
+
+## 学习任务分析——PLC 综合接线
+
+### 一、学习任务描述
+
+完成 PLC 综合接线。
+
+### 二、学习目标
+
+目标
+
+### 三、学习内容
+
+内容
+
+### 四、学生情况分析
+
+情况
+
+### 五、学习资源
+
+耗材：导线
+
+## 教学活动设计
+
+### PLC 认知——接线准备
+
+#### 活动一
+
+##### 12H
+
+学习内容
+
+学生活动
+
+教师活动
+
+教学方法
+`
+	output := convertMarkdown(input)
+
+	for _, want := range []string{
+		"#section-title[学习任务分析]",
+		"[学习任务], table.cell(colspan: 5)[PLC 综合接线]",
+		"[课时], table.cell(colspan: 2)[12], [起止日期], table.cell(colspan: 2)[5 月 29 日——6 月 2 日]",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected inferred learning-task analysis output to contain %q", want)
+		}
+	}
+	if strings.Contains(output, "#section-title[学习任务分析——PLC 综合接线]") {
+		t.Fatal("expected rendered analysis section title to omit task suffix")
 	}
 }
 

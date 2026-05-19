@@ -145,6 +145,10 @@ type lessonFrontMatter struct {
 	FirstTeachingDay string `yaml:"first_teaching_day"`
 	DailyHours       int    `yaml:"daily_hours"`
 	CalendarJSON     string `yaml:"calendar_json"`
+
+	TeachingStartDate    time.Time `yaml:"-"`
+	TeachingEndDate      time.Time `yaml:"-"`
+	HasTeachingDateRange bool      `yaml:"-"`
 }
 
 type calendarDay struct {
@@ -273,6 +277,9 @@ func inferLessonFrontMatter(fm lessonFrontMatter, sections []DocumentSection) le
 		fm.TotalHours = formatHourTotal(total)
 	}
 	if start, end, ok := inferTeachingDateRange(fm, sections); ok {
+		fm.TeachingStartDate = start
+		fm.TeachingEndDate = end
+		fm.HasTeachingDateRange = true
 		fm.UseTime = formatMonthRange(start, end)
 	} else if strings.TrimSpace(fm.UseTime) != "" {
 		fm.UseTime = normalizeUseTimeMonthRange(fm.UseTime)
@@ -797,7 +804,7 @@ func generateTypstWithFrontMatter(fm lessonFrontMatter, sections []DocumentSecti
 			renderCoverSection(&sb, frontMatterFromSection(section), section.H2Title)
 			coverRendered = true
 		case "analysis":
-			renderLearningTaskAnalysisSection(&sb, section)
+			renderLearningTaskAnalysisSection(&sb, section, fm)
 		case "evaluation":
 			renderEvaluationSection(&sb, section)
 		default:
@@ -1047,8 +1054,35 @@ func activitySectionTitle(title string) string {
 	return title
 }
 
+func analysisSectionTitle(title string) string {
+	if strings.Contains(normalizeTitle(title), "学习任务分析") {
+		return "学习任务分析"
+	}
+	return title
+}
+
+func learningTaskNameFromAnalysisTitle(title string) string {
+	title = strings.TrimSpace(title)
+	for _, sep := range []string{"——", "—", " - ", "-"} {
+		parts := strings.SplitN(title, sep, 2)
+		if len(parts) == 2 && strings.Contains(normalizeTitle(parts[0]), "学习任务分析") {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
+}
+
 func formatLearningTaskDate(value string) string {
 	return strings.TrimSpace(chineseYearPattern.ReplaceAllString(value, ""))
+}
+
+func formatLearningTaskDateRange(start, end time.Time) string {
+	startText := fmt.Sprintf("%d 月 %d 日", int(start.Month()), start.Day())
+	endText := fmt.Sprintf("%d 月 %d 日", int(end.Month()), end.Day())
+	if dateOnly(start).Equal(dateOnly(end)) {
+		return startText
+	}
+	return startText + "——" + endText
 }
 
 func resourceColumnSpec(resources map[string]string) string {
@@ -1177,7 +1211,7 @@ func nearlyEqualFloat(a, b float64) bool {
 	return math.Abs(a-b) < 1e-9
 }
 
-func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSection) {
+func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSection, fm lessonFrontMatter) {
 	fields := parseKeyValueLines(section.RawLines)
 	blocks := parseHeadingBlocks(section.RawLines)
 	blockContent := func(title string) string {
@@ -1190,15 +1224,27 @@ func renderLearningTaskAnalysisSection(sb *strings.Builder, section DocumentSect
 	}
 
 	resources := splitResourceFields(blockContent("五、学习资源"))
+	taskName := strings.TrimSpace(fields["学习任务"])
+	if taskName == "" {
+		taskName = learningTaskNameFromAnalysisTitle(section.H2Title)
+	}
+	hours := strings.TrimSpace(fields["课时"])
+	if strings.TrimSpace(fm.TotalHours) != "" {
+		hours = fm.TotalHours
+	}
+	dateRange := formatLearningTaskDate(fields["起止日期"])
+	if fm.HasTeachingDateRange {
+		dateRange = formatLearningTaskDateRange(fm.TeachingStartDate, fm.TeachingEndDate)
+	}
 
-	sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(section.H2Title), sectionHeadingGap))
+	sb.WriteString(fmt.Sprintf("\n#section-title[%s]\n#v(%s)\n", typst.EscapeContent(analysisSectionTitle(section.H2Title)), sectionHeadingGap))
 	sb.WriteString("#align(center)[\n")
 	sb.WriteString("  #table(\n")
 	sb.WriteString("    columns: (2.2cm, 3.2cm, 2.2cm, 2.4cm, 3.1cm, 3.24cm),\n")
 	sb.WriteString("    stroke: 0.5pt,\n")
 	sb.WriteString("    align: center + horizon,\n")
-	sb.WriteString(fmt.Sprintf("    [学习任务], table.cell(colspan: 5)[%s],\n", typst.EscapeContent(fields["学习任务"])))
-	sb.WriteString(fmt.Sprintf("    [课时], table.cell(colspan: 2)[%s], [起止日期], table.cell(colspan: 2)[%s],\n", typst.EscapeContent(fields["课时"]), typst.EscapeContent(formatLearningTaskDate(fields["起止日期"]))))
+	sb.WriteString(fmt.Sprintf("    [学习任务], table.cell(colspan: 5)[%s],\n", typst.EscapeContent(taskName)))
+	sb.WriteString(fmt.Sprintf("    [课时], table.cell(colspan: 2)[%s], [起止日期], table.cell(colspan: 2)[%s],\n", typst.EscapeContent(hours), typst.EscapeContent(dateRange)))
 
 	analysisRows := []struct {
 		Title   string
