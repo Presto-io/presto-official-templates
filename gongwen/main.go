@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -41,11 +42,16 @@ type frontMatter struct {
 	Signature bool
 }
 
+func todayDate() string {
+	return time.Now().Format("2006-01-02")
+}
+
 // parseFrontMatter splits "---" delimited YAML from body and returns metadata + body.
 func parseFrontMatter(input string) (frontMatter, string) {
 	var fm frontMatter
 	fm.Title = "请输入文字"
 	fm.Author = "请输入文字"
+	fm.Date = todayDate()
 
 	// Normalise line endings
 	input = strings.ReplaceAll(input, "\r\n", "\n")
@@ -94,8 +100,10 @@ func parseFrontMatter(input string) (frontMatter, string) {
 		}
 	}
 
-	// date
+	// date. Accept data as a compatibility alias so a typo cannot break preview.
 	if v, ok := raw["date"]; ok {
+		fm.Date = fmt.Sprintf("%v", v)
+	} else if v, ok := raw["data"]; ok {
 		fm.Date = fmt.Sprintf("%v", v)
 	}
 

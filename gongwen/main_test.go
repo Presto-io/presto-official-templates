@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExampleOutputGoldenHash(t *testing.T) {
@@ -26,6 +27,45 @@ func TestSingleImagesUseFloatingPlacement(t *testing.T) {
 	}
 	if !strings.Contains(output, `image("assets/process.png"`) {
 		t.Fatal("expected image path to be rendered")
+	}
+}
+
+func TestMissingDateDefaultsToToday(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+
+	noFrontmatter, _ := parseFrontMatter("正文内容。")
+	if noFrontmatter.Date != today {
+		t.Fatalf("expected missing frontmatter date to default to today, got %q want %q", noFrontmatter.Date, today)
+	}
+
+	noDate, _ := parseFrontMatter(`---
+title: "无日期测试"
+template: "gongwen"
+---
+
+正文内容。
+`)
+	if noDate.Date != today {
+		t.Fatalf("expected missing date field to default to today, got %q want %q", noDate.Date, today)
+	}
+
+	output := convert(noDate, "正文内容。")
+	if !strings.Contains(output, "year: "+today[:4]) {
+		t.Fatalf("expected default date to render as datetime:\n%s", output)
+	}
+}
+
+func TestDataAliasPopulatesDate(t *testing.T) {
+	fm, _ := parseFrontMatter(`---
+title: "日期别名测试"
+data: "2026-05-22"
+---
+
+正文内容。
+`)
+
+	if fm.Date != "2026-05-22" {
+		t.Fatalf("expected data alias to populate date, got %q", fm.Date)
 	}
 }
 
