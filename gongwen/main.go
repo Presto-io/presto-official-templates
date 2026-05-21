@@ -951,9 +951,9 @@ func (c *converter) renderCodeBlock(n ast.Node) string {
 	}
 
 	if lang != "" {
-		return "```" + lang + "\n" + code + "```\n\n"
+		return "#code-block[```" + lang + "\n" + code + "```]\n\n"
 	}
-	return "```\n" + code + "```\n\n"
+	return "#code-block[```\n" + code + "```]\n\n"
 }
 
 // renderBlockquote renders a blockquote.

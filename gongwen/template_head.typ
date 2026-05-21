@@ -7,6 +7,7 @@
 #let FONT_FS = "STFangsong" // 仿宋
 #let FONT_KAI = "STKaiti" // 楷体
 #let FONT_SONG = "STSong" // 宋体
+#let FONT_CODE = "Noto Sans Mono CJK SC" // 代码块
 
 // 设置页面、页边距、页脚
 #set page(
@@ -200,6 +201,12 @@
 
 #show list: flush-left-list
 #show enum: flush-left-list
+
+#let code-block(body) = block(width: 100%)[
+  #text(font: FONT_CODE, size: zh(4))[
+    #body
+  ]
+]
 
 #let name(name) = align(center, pad(bottom: 0.8em)[
   #text(font: FONT_KAI, size: zh(3))[#name]

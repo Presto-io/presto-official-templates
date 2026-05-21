@@ -11,7 +11,7 @@ func TestExampleOutputGoldenHash(t *testing.T) {
 	fm, body := parseFrontMatter(exampleMD)
 	output := convert(fm, body)
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-	const want = "160544551f2355cf1fd9898245d6650ffc02e67d8767549c93771a9808ab8a56"
+	const want = "6a9f12f5be9c8ca6d1b81d9459e14aa7723a4fc35e699999c169716f74bc8678"
 	if got != want {
 		t.Fatalf("example output changed: got %s, want %s", got, want)
 	}
@@ -374,5 +374,19 @@ func TestTemplateUsesTextWeightForWholeHeadingBold(t *testing.T) {
 		if !strings.Contains(templateHead, want) {
 			t.Fatalf("expected bold wrapper around heading number and body:\n%s", want)
 		}
+	}
+}
+
+func TestCodeBlocksUseUnifiedCodeFont(t *testing.T) {
+	output := convertBody("```go\nfunc main() { println(\"中文测试\") }\n```\n")
+
+	if !strings.Contains(output, "#code-block[```go\nfunc main() { println(\"中文测试\") }\n```]\n\n") {
+		t.Fatalf("expected fenced code block to use the code-block wrapper:\n%s", output)
+	}
+	if !strings.Contains(templateHead, `#let FONT_CODE = "Noto Sans Mono CJK SC"`) {
+		t.Fatal("expected template to define a stable CJK monospace code font")
+	}
+	if !strings.Contains(templateHead, "#let code-block(body) = block(width: 100%)[") {
+		t.Fatal("expected template to define code-block wrapper")
 	}
 }
