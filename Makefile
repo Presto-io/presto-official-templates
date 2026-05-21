@@ -1,6 +1,15 @@
 .PHONY: build build-all test test-security clean preview
 
 TEMPLATES := gongwen jiaoan-shicao jiaoan-jihua
+PRESTO_APP_ID ?= com.mrered.presto
+
+ifeq ($(shell uname -s),Darwin)
+PRESTO_DATA_DIR ?= $(HOME)/Library/Application Support/$(PRESTO_APP_ID)
+else ifeq ($(OS),Windows_NT)
+PRESTO_DATA_DIR ?= $(LOCALAPPDATA)/$(PRESTO_APP_ID)
+else
+PRESTO_DATA_DIR ?= $(if $(XDG_DATA_HOME),$(XDG_DATA_HOME),$(HOME)/.local/share)/$(PRESTO_APP_ID)
+endif
 
 # Go 安全黑名单：禁止这些标准库包
 GO_STDLIB_DENY := ^net$$|^net/|^os/exec$$|^plugin$$|^debug/
@@ -76,10 +85,10 @@ preview:
 ifndef NAME
 	$(error Usage: make preview NAME=gongwen)
 endif
-	@mkdir -p ~/.presto/templates/$(NAME)
-	cp presto-template-$(NAME) ~/.presto/templates/$(NAME)/
-	./presto-template-$(NAME) --manifest > ~/.presto/templates/$(NAME)/manifest.json
-	@echo "Installed $(NAME) to ~/.presto/templates/$(NAME)/"
+	@mkdir -p "$(PRESTO_DATA_DIR)/templates/$(NAME)"
+	cp presto-template-$(NAME) "$(PRESTO_DATA_DIR)/templates/$(NAME)/"
+	./presto-template-$(NAME) --manifest > "$(PRESTO_DATA_DIR)/templates/$(NAME)/manifest.json"
+	@echo "Installed $(NAME) to $(PRESTO_DATA_DIR)/templates/$(NAME)/"
 
 clean:
 	rm -f presto-template-*
