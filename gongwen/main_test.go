@@ -238,6 +238,63 @@ func TestSeparatedHeadingKeepsStandaloneSpacing(t *testing.T) {
 	}
 }
 
+func TestCustomBlockMarkersUseUnifiedDotSyntax(t *testing.T) {
+	cases := []struct {
+		name string
+		md   string
+		want string
+	}{
+		{name: "blank defaults to one line", md: "{.blank}\n", want: "#linebreak(justify: false)\n"},
+		{name: "blank count", md: "{.blank:3}\n", want: "#linebreak(justify: false)\n#linebreak(justify: false)\n#linebreak(justify: false)\n"},
+		{name: "br alias", md: "{.br:2}\n", want: "#linebreak(justify: false)\n#linebreak(justify: false)\n"},
+		{name: "pagebreak", md: "{.pagebreak}\n", want: "#pagebreak()\n"},
+		{name: "weak pagebreak", md: "{.pagebreak:weak}\n", want: "#pagebreak(weak: true)\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := convertBody(tc.md); got != tc.want {
+				t.Fatalf("unexpected marker output:\ngot:  %q\nwant: %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLegacyCustomBlockMarkersRemainSupported(t *testing.T) {
+	cases := []struct {
+		name string
+		md   string
+		want string
+	}{
+		{name: "legacy blank", md: "{v:2}\n", want: "#linebreak(justify: false)\n#linebreak(justify: false)\n"},
+		{name: "legacy pagebreak", md: "{pagebreak}\n", want: "#pagebreak()\n"},
+		{name: "legacy weak pagebreak", md: "{pagebreak:weak}\n", want: "#pagebreak(weak: true)\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := convertBody(tc.md); got != tc.want {
+				t.Fatalf("unexpected legacy marker output:\ngot:  %q\nwant: %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParagraphIndentMarkersUseUnifiedDotSyntax(t *testing.T) {
+	noindent := convertBody("这是一段顶格文字。 {.noindent}\n")
+	if !strings.Contains(noindent, "#set par(first-line-indent: 0pt)") {
+		t.Fatalf("expected noindent marker to disable first-line indent:\n%s", noindent)
+	}
+	if strings.Contains(noindent, "{.noindent}") {
+		t.Fatalf("expected noindent marker to be stripped:\n%s", noindent)
+	}
+
+	indent := convertBody("这是一段恢复缩进文字。 {.indent}\n")
+	if indent != "这是一段恢复缩进文字。\n\n" {
+		t.Fatalf("expected indent marker to be stripped while preserving paragraph:\n%s", indent)
+	}
+}
+
 func TestHeadingPartialBoldKeepsStrongInHeadingBody(t *testing.T) {
 	output := convertBody(`## 工作**要求**
 各部门要严格落实责任。

@@ -565,22 +565,57 @@ func (c *converter) renderMultiImage(images []*ast.Image) string {
 		strings.Join(altsStr, ", "), strconv.FormatBool(isSubfigure), typst.EscapeString(mainCaption))
 }
 
-// vMarkerRe matches {v} or {v:N}
-var vMarkerRe = regexp.MustCompile(`^\{v(?::(\d+))?\}$`)
+// Legacy: {v} / {v:N}. Preferred: {.blank} / {.blank:N} or {.br} / {.br:N}.
+var legacyVMarkerRe = regexp.MustCompile(`^\{v(?::(\d+))?\}$`)
+var customBlockMarkerRe = regexp.MustCompile(`^\{\.([a-z][a-z0-9-]*)(?::([a-z0-9-]+))?\}$`)
+
+func renderLinebreaks(count int) string {
+	if count < 1 {
+		count = 1
+	}
+	var lines []string
+	for i := 0; i < count; i++ {
+		lines = append(lines, "#linebreak(justify: false)")
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func markerCount(value string) (int, bool) {
+	if value == "" {
+		return 1, true
+	}
+	count, err := strconv.Atoi(value)
+	if err != nil || count < 1 {
+		return 0, false
+	}
+	return count, true
+}
 
 // processMarker checks if text is a standalone marker and returns Typst code.
 func processMarker(text string) (string, bool) {
 	text = strings.TrimSpace(text)
-	if m := vMarkerRe.FindStringSubmatch(text); m != nil {
-		count := 1
-		if m[1] != "" {
-			count, _ = strconv.Atoi(m[1])
+	if m := legacyVMarkerRe.FindStringSubmatch(text); m != nil {
+		count, _ := markerCount(m[1])
+		return renderLinebreaks(count), true
+	}
+	if m := customBlockMarkerRe.FindStringSubmatch(text); m != nil {
+		name := m[1]
+		arg := m[2]
+		switch name {
+		case "br", "blank":
+			count, ok := markerCount(arg)
+			if !ok {
+				return "", false
+			}
+			return renderLinebreaks(count), true
+		case "pagebreak":
+			if arg == "" {
+				return "#pagebreak()\n", true
+			}
+			if arg == "weak" {
+				return "#pagebreak(weak: true)\n", true
+			}
 		}
-		var lines []string
-		for i := 0; i < count; i++ {
-			lines = append(lines, "#linebreak(justify: false)")
-		}
-		return strings.Join(lines, "\n") + "\n", true
 	}
 	if text == "{pagebreak}" {
 		return "#pagebreak()\n", true
@@ -591,25 +626,48 @@ func processMarker(text string) (string, bool) {
 	return "", false
 }
 
-// stripTrailingMarker checks for supported trailing style markers.
-func stripTrailingMarker(text string) (string, string) {
-	text = strings.TrimRight(text, " ")
-	if strings.HasSuffix(text, "{.noindent}") {
-		return strings.TrimRight(strings.TrimSuffix(text, "{.noindent}"), " "), "noindent"
-	}
-	if strings.HasSuffix(text, "{indent}") {
-		return strings.TrimRight(strings.TrimSuffix(text, "{indent}"), " "), "indent"
-	}
-	if strings.HasSuffix(text, "{.bold}") {
-		return strings.TrimRight(strings.TrimSuffix(text, "{.bold}"), " "), "bold"
-	}
-	return text, ""
+type trailingStyleMarkers struct {
+	noindent bool
+	indent   bool
+	bold     bool
+	raw      []string
 }
 
-func trimRenderedTrailingMarker(content string, marker string) string {
-	content = strings.TrimRight(content, " \n")
-	content = strings.TrimSuffix(content, marker)
-	return strings.TrimRight(content, " ")
+var trailingStyleMarkerRe = regexp.MustCompile(`\s*(\{\.[a-z][a-z0-9-]*\}|\{indent\})\s*$`)
+
+// stripTrailingStyleMarkers checks for supported trailing style markers.
+func stripTrailingStyleMarkers(text string) (string, trailingStyleMarkers) {
+	var markers trailingStyleMarkers
+	for {
+		m := trailingStyleMarkerRe.FindStringSubmatchIndex(text)
+		if m == nil {
+			break
+		}
+
+		raw := text[m[2]:m[3]]
+		switch raw {
+		case "{.noindent}":
+			markers.noindent = true
+		case "{.indent}", "{indent}":
+			markers.indent = true
+		case "{.bold}":
+			markers.bold = true
+		default:
+			return text, markers
+		}
+
+		markers.raw = append(markers.raw, raw)
+		text = strings.TrimRight(text[:m[0]], " ")
+	}
+	return text, markers
+}
+
+func trimRenderedTrailingMarkers(content string, markers trailingStyleMarkers) string {
+	for _, marker := range markers.raw {
+		content = strings.TrimRight(content, " \n")
+		content = strings.TrimSuffix(content, marker)
+	}
+	return strings.TrimRight(content, " \n ")
 }
 
 func isBodyHeadingLevel(level int) bool {
@@ -635,13 +693,13 @@ func (c *converter) renderParagraph(para *ast.Paragraph) string {
 
 	content := c.renderInlines(para)
 
-	_, marker := stripTrailingMarker(trimmed)
-	if marker == "noindent" {
-		content = trimRenderedTrailingMarker(content, "{.noindent}")
+	_, markers := stripTrailingStyleMarkers(trimmed)
+	if markers.noindent {
+		content = trimRenderedTrailingMarkers(content, markers)
 		return "#block[#set par(first-line-indent: 0pt)\n#block[\n" + content + "\n\n]\n]\n"
 	}
-	if marker == "indent" {
-		content = trimRenderedTrailingMarker(content, "{indent}")
+	if markers.indent {
+		content = trimRenderedTrailingMarkers(content, markers)
 		return content + "\n\n"
 	}
 
@@ -665,14 +723,14 @@ func (c *converter) renderHeading(h *ast.Heading) string {
 
 	content := c.renderInlines(h)
 
-	_, marker := stripTrailingMarker(strings.TrimSpace(c.plainText(h)))
-	if marker == "noindent" {
-		content = trimRenderedTrailingMarker(content, "{.noindent}")
+	_, markers := stripTrailingStyleMarkers(strings.TrimSpace(c.plainText(h)))
+	if markers.noindent {
+		content = trimRenderedTrailingMarkers(content, markers)
 		prefix := strings.Repeat("=", h.Level)
 		return "#block[#set par(first-line-indent: 0pt)\n" + prefix + " " + content + "\n]\n\n"
 	}
-	if marker == "bold" && isBodyHeadingLevel(h.Level) {
-		content = trimRenderedTrailingMarker(content, "{.bold}")
+	if markers.bold && isBodyHeadingLevel(h.Level) {
+		content = trimRenderedTrailingMarkers(content, markers)
 		return fmt.Sprintf("#custom-heading-block(%d, [%s], bold: true)\n\n", h.Level, content)
 	}
 
@@ -684,18 +742,13 @@ func (c *converter) renderRunInHeadingParagraph(h *ast.Heading, para *ast.Paragr
 	c.hasSeenHeader = true
 
 	content := c.renderInlines(h)
-	_, marker := stripTrailingMarker(strings.TrimSpace(c.plainText(h)))
-	bold := false
-	if marker == "noindent" {
-		content = trimRenderedTrailingMarker(content, "{.noindent}")
-	}
-	if marker == "bold" {
-		content = trimRenderedTrailingMarker(content, "{.bold}")
-		bold = true
+	_, markers := stripTrailingStyleMarkers(strings.TrimSpace(c.plainText(h)))
+	if len(markers.raw) > 0 {
+		content = trimRenderedTrailingMarkers(content, markers)
 	}
 
 	body := strings.TrimLeft(c.renderInlines(para), " \n")
-	return fmt.Sprintf("#custom-heading(%d, [%s], bold: %s)%s\n\n", h.Level, content, strconv.FormatBool(bold), body)
+	return fmt.Sprintf("#custom-heading(%d, [%s], bold: %s)%s\n\n", h.Level, content, strconv.FormatBool(markers.bold), body)
 }
 
 // renderList renders a list node to Typst.
