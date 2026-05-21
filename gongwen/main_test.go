@@ -180,3 +180,25 @@ func TestShortTableCaptionSpacingUsesPageGrid(t *testing.T) {
 		t.Fatal("expected standalone table captions to use the shared table-row spacing")
 	}
 }
+
+func TestAdjacentHeadingAndParagraphRenderRunIn(t *testing.T) {
+	output := convertBody(`## 工作要求
+各部门要严格落实责任。
+`)
+
+	want := "#custom-heading(2, [工作要求])各部门要严格落实责任。\n\n"
+	if output != want {
+		t.Fatalf("expected adjacent heading and paragraph to render on one line:\n%s", output)
+	}
+}
+
+func TestSeparatedHeadingKeepsStandaloneSpacing(t *testing.T) {
+	output := convertBody(`## 工作要求
+
+各部门要严格落实责任。
+`)
+
+	if !strings.Contains(output, "== 工作要求\n\n各部门要严格落实责任。\n\n") {
+		t.Fatalf("expected blank-line separated heading to keep standalone rendering:\n%s", output)
+	}
+}

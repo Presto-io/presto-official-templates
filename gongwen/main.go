@@ -669,6 +669,21 @@ func (c *converter) renderHeading(h *ast.Heading) string {
 	return prefix + " " + content + "\n\n"
 }
 
+func (c *converter) renderRunInHeadingParagraph(h *ast.Heading, para *ast.Paragraph) string {
+	c.hasSeenHeader = true
+
+	content := c.renderInlines(h)
+	_, marker := stripTrailingMarker(strings.TrimSpace(c.plainText(h)))
+	if marker == "noindent" {
+		content = strings.TrimRight(content, " \n")
+		content = strings.TrimSuffix(content, "{.noindent}")
+		content = strings.TrimRight(content, " ")
+	}
+
+	body := strings.TrimLeft(c.renderInlines(para), " \n")
+	return fmt.Sprintf("#custom-heading(%d, [%s])%s\n\n", h.Level, content, body)
+}
+
 // renderList renders a list node to Typst.
 func (c *converter) renderList(list *ast.List) string {
 	var buf strings.Builder
@@ -727,6 +742,42 @@ func isHTMLComment(n ast.Node, source []byte, keyword string) bool {
 	return strings.Contains(string(seg.Value(source)), keyword)
 }
 
+func (c *converter) shouldRunInHeadingParagraph(heading ast.Node, next ast.Node) bool {
+	h, ok := heading.(*ast.Heading)
+	if !ok || h.Level == 1 {
+		return false
+	}
+	para, ok := next.(*ast.Paragraph)
+	if !ok {
+		return false
+	}
+	if len(c.collectImages(para)) > 0 {
+		return false
+	}
+	plain := strings.TrimSpace(c.plainText(para))
+	if plain == "" {
+		return false
+	}
+	if _, ok := processMarker(plain); ok {
+		return false
+	}
+
+	headingLines := heading.Lines()
+	paraLines := para.Lines()
+	if headingLines.Len() == 0 || paraLines.Len() == 0 {
+		return false
+	}
+
+	betweenStart := headingLines.At(headingLines.Len() - 1).Stop
+	betweenEnd := paraLines.At(0).Start
+	if betweenStart > betweenEnd || betweenEnd > len(c.source) {
+		return false
+	}
+
+	between := string(c.source[betweenStart:betweenEnd])
+	return strings.Count(between, "\n") <= 1 && strings.TrimSpace(between) == ""
+}
+
 // renderDocumentBlocks renders top-level document blocks while preserving
 // table captions and noindent regions that can consume multiple AST nodes.
 func (c *converter) renderDocumentBlocks(doc ast.Node) []string {
@@ -761,6 +812,9 @@ func (c *converter) renderDocumentBlocks(doc ast.Node) []string {
 			blocks = append(blocks, c.renderTableWithCaption(child, caption))
 
 			child = next
+		} else if next := child.NextSibling(); c.shouldRunInHeadingParagraph(child, next) {
+			blocks = append(blocks, c.renderRunInHeadingParagraph(child.(*ast.Heading), next.(*ast.Paragraph)))
+			child = next.NextSibling()
 		} else {
 			blocks = append(blocks, c.renderBlock(child, false))
 			child = child.NextSibling()
