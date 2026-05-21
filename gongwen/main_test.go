@@ -11,7 +11,7 @@ func TestExampleOutputGoldenHash(t *testing.T) {
 	fm, body := parseFrontMatter(exampleMD)
 	output := convert(fm, body)
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-	const want = "723afa5c4c865fd2c7847ccd865a2bf2567858407f36e4abdac2fb954b4dc5dc"
+	const want = "3d9ac7a72231741f59d9435be4b88ca803b8d698638dca7280c58d94849f2c60"
 	if got != want {
 		t.Fatalf("example output changed: got %s, want %s", got, want)
 	}
@@ -326,5 +326,27 @@ func TestHeadingBoldMarkerBoldensNumberAndHeading(t *testing.T) {
 	}
 	if strings.Contains(standalone, "{.bold}") {
 		t.Fatalf("expected bold marker to be stripped from output:\n%s", standalone)
+	}
+}
+
+func TestTemplateUsesTextWeightForWholeHeadingBold(t *testing.T) {
+	if strings.Contains(templateHead, "strong(body)") || strings.Contains(templateHead, "maybe-strong") {
+		t.Fatal("expected whole-heading bold to use explicit text weight, not strong()")
+	}
+	if !strings.Contains(templateHead, `#let maybe-bold(enabled, body) = if enabled {`) {
+		t.Fatal("expected template to define maybe-bold helper")
+	}
+	if !strings.Contains(templateHead, `text(weight: "bold")[#body]`) {
+		t.Fatal("expected bold headings to set explicit text weight")
+	}
+	for _, want := range []string{
+		`#maybe-bold(bold)[#context h2-counter.display("一、")#body]`,
+		`#maybe-bold(bold)[#context h3-counter.display("（一）")#body]`,
+		`#maybe-bold(bold)[#context h4-counter.display("1.")#body]`,
+		`#maybe-bold(bold)[#context h5-counter.display("（1）")#body]`,
+	} {
+		if !strings.Contains(templateHead, want) {
+			t.Fatalf("expected bold wrapper around heading number and body:\n%s", want)
+		}
 	}
 }

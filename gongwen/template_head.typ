@@ -77,8 +77,8 @@
 }
 
 // 自定义标题函数
-#let maybe-strong(enabled, body) = if enabled {
-  strong(body)
+#let maybe-bold(enabled, body) = if enabled {
+  text(weight: "bold")[#body]
 } else {
   body
 }
@@ -105,7 +105,7 @@
     text(
       font: FONT_HEI,
       size: zh(3),
-    )[#maybe-strong(bold)[#context h2-counter.display("一、")#body]]
+    )[#maybe-bold(bold)[#context h2-counter.display("一、")#body]]
   } else if level == 3 {
     h3-counter.step()
     h4-counter.update(1)
@@ -114,20 +114,20 @@
     text(
       font: FONT_KAI,
       size: zh(3),
-    )[#maybe-strong(bold)[#context h3-counter.display("（一）")#body]]
+    )[#maybe-bold(bold)[#context h3-counter.display("（一）")#body]]
   } else if level == 4 {
     h4-counter.step()
     h5-counter.update(1)
 
     text(
       size: zh(3),
-    )[#maybe-strong(bold)[#context h4-counter.display("1.")#body]]
+    )[#maybe-bold(bold)[#context h4-counter.display("1.")#body]]
   } else if level == 5 {
     h5-counter.step()
 
     text(
       size: zh(3),
-    )[#maybe-strong(bold)[#context h5-counter.display("（1）")#body]]
+    )[#maybe-bold(bold)[#context h5-counter.display("（1）")#body]]
   }
 }
 
