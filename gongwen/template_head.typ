@@ -77,7 +77,13 @@
 }
 
 // 自定义标题函数
-#let custom-heading(level, body, numbering: auto) = {
+#let maybe-strong(enabled, body) = if enabled {
+  strong(body)
+} else {
+  body
+}
+
+#let custom-heading(level, body, numbering: auto, bold: false) = {
   if level == 1 {
     v(0pt)
     align(center)[
@@ -99,38 +105,35 @@
     text(
       font: FONT_HEI,
       size: zh(3),
-    )[#context h2-counter.display("一、")#body]
+    )[#maybe-strong(bold)[#context h2-counter.display("一、")#body]]
   } else if level == 3 {
     h3-counter.step()
     h4-counter.update(1)
     h5-counter.update(1)
 
-    let number = h3-counter.get().first()
     text(
       font: FONT_KAI,
       size: zh(3),
-    )[#context h3-counter.display("（一）")#body]
+    )[#maybe-strong(bold)[#context h3-counter.display("（一）")#body]]
   } else if level == 4 {
     h4-counter.step()
     h5-counter.update(1)
 
-    let number = h4-counter.get().first()
     text(
       size: zh(3),
-    )[#number. #body]
+    )[#maybe-strong(bold)[#context h4-counter.display("1.")#body]]
   } else if level == 5 {
     h5-counter.step()
 
-    let number = h5-counter.get().first()
     text(
       size: zh(3),
-    )[（#number）#body]
+    )[#maybe-strong(bold)[#context h5-counter.display("（1）")#body]]
   }
 }
 
-#show heading: it => {
-  if it.level == 1 {
-    custom-heading(it.level, it.body, numbering: it.numbering)
+#let custom-heading-block(level, body, numbering: auto, bold: false) = {
+  if level == 1 {
+    custom-heading(level, body, numbering: numbering, bold: bold)
   } else {
     let spacing = 13.9pt
     let threshold = 3em
@@ -141,13 +144,17 @@
       below: spacing,
       {
         block(
-          custom-heading(it.level, it.body, numbering: it.numbering) + v(threshold),
+          custom-heading(level, body, numbering: numbering, bold: bold) + v(threshold),
           breakable: false,
         )
         v(-threshold)
       },
     )
   }
+}
+
+#show heading: it => {
+  custom-heading-block(it.level, it.body, numbering: it.numbering)
 }
 
 #h2-counter.update(0)

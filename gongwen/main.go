@@ -591,7 +591,7 @@ func processMarker(text string) (string, bool) {
 	return "", false
 }
 
-// stripTrailingMarker checks for {.noindent} or {indent} at end of inline text.
+// stripTrailingMarker checks for supported trailing style markers.
 func stripTrailingMarker(text string) (string, string) {
 	text = strings.TrimRight(text, " ")
 	if strings.HasSuffix(text, "{.noindent}") {
@@ -600,7 +600,20 @@ func stripTrailingMarker(text string) (string, string) {
 	if strings.HasSuffix(text, "{indent}") {
 		return strings.TrimRight(strings.TrimSuffix(text, "{indent}"), " "), "indent"
 	}
+	if strings.HasSuffix(text, "{.bold}") {
+		return strings.TrimRight(strings.TrimSuffix(text, "{.bold}"), " "), "bold"
+	}
 	return text, ""
+}
+
+func trimRenderedTrailingMarker(content string, marker string) string {
+	content = strings.TrimRight(content, " \n")
+	content = strings.TrimSuffix(content, marker)
+	return strings.TrimRight(content, " ")
+}
+
+func isBodyHeadingLevel(level int) bool {
+	return level >= 2 && level <= 5
 }
 
 // renderParagraph renders a paragraph node to Typst.
@@ -624,15 +637,11 @@ func (c *converter) renderParagraph(para *ast.Paragraph) string {
 
 	_, marker := stripTrailingMarker(trimmed)
 	if marker == "noindent" {
-		content = strings.TrimRight(content, " \n")
-		content = strings.TrimSuffix(content, "{.noindent}")
-		content = strings.TrimRight(content, " ")
+		content = trimRenderedTrailingMarker(content, "{.noindent}")
 		return "#block[#set par(first-line-indent: 0pt)\n#block[\n" + content + "\n\n]\n]\n"
 	}
 	if marker == "indent" {
-		content = strings.TrimRight(content, " \n")
-		content = strings.TrimSuffix(content, "{indent}")
-		content = strings.TrimRight(content, " ")
+		content = trimRenderedTrailingMarker(content, "{indent}")
 		return content + "\n\n"
 	}
 
@@ -658,11 +667,13 @@ func (c *converter) renderHeading(h *ast.Heading) string {
 
 	_, marker := stripTrailingMarker(strings.TrimSpace(c.plainText(h)))
 	if marker == "noindent" {
-		content = strings.TrimRight(content, " \n")
-		content = strings.TrimSuffix(content, "{.noindent}")
-		content = strings.TrimRight(content, " ")
+		content = trimRenderedTrailingMarker(content, "{.noindent}")
 		prefix := strings.Repeat("=", h.Level)
 		return "#block[#set par(first-line-indent: 0pt)\n" + prefix + " " + content + "\n]\n\n"
+	}
+	if marker == "bold" && isBodyHeadingLevel(h.Level) {
+		content = trimRenderedTrailingMarker(content, "{.bold}")
+		return fmt.Sprintf("#custom-heading-block(%d, [%s], bold: true)\n\n", h.Level, content)
 	}
 
 	prefix := strings.Repeat("=", h.Level)
@@ -674,14 +685,17 @@ func (c *converter) renderRunInHeadingParagraph(h *ast.Heading, para *ast.Paragr
 
 	content := c.renderInlines(h)
 	_, marker := stripTrailingMarker(strings.TrimSpace(c.plainText(h)))
+	bold := false
 	if marker == "noindent" {
-		content = strings.TrimRight(content, " \n")
-		content = strings.TrimSuffix(content, "{.noindent}")
-		content = strings.TrimRight(content, " ")
+		content = trimRenderedTrailingMarker(content, "{.noindent}")
+	}
+	if marker == "bold" {
+		content = trimRenderedTrailingMarker(content, "{.bold}")
+		bold = true
 	}
 
 	body := strings.TrimLeft(c.renderInlines(para), " \n")
-	return fmt.Sprintf("#custom-heading(%d, [%s])%s\n\n", h.Level, content, body)
+	return fmt.Sprintf("#custom-heading(%d, [%s], bold: %s)%s\n\n", h.Level, content, strconv.FormatBool(bold), body)
 }
 
 // renderList renders a list node to Typst.
@@ -744,7 +758,7 @@ func isHTMLComment(n ast.Node, source []byte, keyword string) bool {
 
 func (c *converter) shouldRunInHeadingParagraph(heading ast.Node, next ast.Node) bool {
 	h, ok := heading.(*ast.Heading)
-	if !ok || h.Level == 1 {
+	if !ok || !isBodyHeadingLevel(h.Level) {
 		return false
 	}
 	para, ok := next.(*ast.Paragraph)

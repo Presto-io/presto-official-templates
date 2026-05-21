@@ -11,7 +11,7 @@ func TestExampleOutputGoldenHash(t *testing.T) {
 	fm, body := parseFrontMatter(exampleMD)
 	output := convert(fm, body)
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-	const want = "80c4c7d4bb923e5935e115332f86d1228b3e4688f20856dc745b9841c7bea751"
+	const want = "723afa5c4c865fd2c7847ccd865a2bf2567858407f36e4abdac2fb954b4dc5dc"
 	if got != want {
 		t.Fatalf("example output changed: got %s, want %s", got, want)
 	}
@@ -182,13 +182,48 @@ func TestShortTableCaptionSpacingUsesPageGrid(t *testing.T) {
 }
 
 func TestAdjacentHeadingAndParagraphRenderRunIn(t *testing.T) {
-	output := convertBody(`## 工作要求
+	cases := []struct {
+		name string
+		md   string
+		want string
+	}{
+		{
+			name: "level 2",
+			md: `## 工作要求
 各部门要严格落实责任。
-`)
+`,
+			want: "#custom-heading(2, [工作要求], bold: false)各部门要严格落实责任。\n\n",
+		},
+		{
+			name: "level 3",
+			md: `### 工作要求
+各部门要严格落实责任。
+`,
+			want: "#custom-heading(3, [工作要求], bold: false)各部门要严格落实责任。\n\n",
+		},
+		{
+			name: "level 4",
+			md: `#### 工作要求
+各部门要严格落实责任。
+`,
+			want: "#custom-heading(4, [工作要求], bold: false)各部门要严格落实责任。\n\n",
+		},
+		{
+			name: "level 5",
+			md: `##### 工作要求
+各部门要严格落实责任。
+`,
+			want: "#custom-heading(5, [工作要求], bold: false)各部门要严格落实责任。\n\n",
+		},
+	}
 
-	want := "#custom-heading(2, [工作要求])各部门要严格落实责任。\n\n"
-	if output != want {
-		t.Fatalf("expected adjacent heading and paragraph to render on one line:\n%s", output)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := convertBody(tc.md)
+			if output != tc.want {
+				t.Fatalf("expected adjacent heading and paragraph to render on one line:\n%s", output)
+			}
+		})
 	}
 }
 
@@ -200,5 +235,39 @@ func TestSeparatedHeadingKeepsStandaloneSpacing(t *testing.T) {
 
 	if !strings.Contains(output, "== 工作要求\n\n各部门要严格落实责任。\n\n") {
 		t.Fatalf("expected blank-line separated heading to keep standalone rendering:\n%s", output)
+	}
+}
+
+func TestHeadingPartialBoldKeepsStrongInHeadingBody(t *testing.T) {
+	output := convertBody(`## 工作**要求**
+各部门要严格落实责任。
+`)
+
+	want := "#custom-heading(2, [工作#strong[要求]], bold: false)各部门要严格落实责任。\n\n"
+	if output != want {
+		t.Fatalf("expected partial heading bold to stay in heading body:\n%s", output)
+	}
+}
+
+func TestHeadingBoldMarkerBoldensNumberAndHeading(t *testing.T) {
+	output := convertBody(`## 工作要求 {.bold}
+各部门要严格落实责任。
+`)
+
+	want := "#custom-heading(2, [工作要求], bold: true)各部门要严格落实责任。\n\n"
+	if output != want {
+		t.Fatalf("expected bold marker to request whole heading bold:\n%s", output)
+	}
+
+	standalone := convertBody(`## 工作要求 {.bold}
+
+各部门要严格落实责任。
+`)
+
+	if !strings.Contains(standalone, "#custom-heading-block(2, [工作要求], bold: true)") {
+		t.Fatalf("expected standalone bold marker to request whole heading block bold:\n%s", standalone)
+	}
+	if strings.Contains(standalone, "{.bold}") {
+		t.Fatalf("expected bold marker to be stripped from output:\n%s", standalone)
 	}
 }
