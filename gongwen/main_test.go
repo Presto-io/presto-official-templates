@@ -11,7 +11,7 @@ func TestExampleOutputGoldenHash(t *testing.T) {
 	fm, body := parseFrontMatter(exampleMD)
 	output := convert(fm, body)
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-	const want = "f306823701a7de0413599384c6e0d32acdc16c2e92cad95cc8a2f8296e3ba0cf"
+	const want = "160544551f2355cf1fd9898245d6650ffc02e67d8767549c93771a9808ab8a56"
 	if got != want {
 		t.Fatalf("example output changed: got %s, want %s", got, want)
 	}
@@ -178,6 +178,32 @@ func TestShortTableCaptionSpacingUsesPageGrid(t *testing.T) {
 
 	if !strings.Contains(output, "table.cell(colspan: 2, align: center, stroke: none, inset: 0pt)[#align(center)[#pad(bottom: (((297mm - 37mm - 35mm) / 22) - zh(3)))[#text(font: FONT_FS, size: zh(3))[表1#h(1em)工作安排]]]],") {
 		t.Fatal("expected standalone table captions to use the shared table-row spacing")
+	}
+}
+
+func TestTableCellsUsePageGridSpacing(t *testing.T) {
+	output := convertBody(`| 项目 | 说明 |
+|------|------|
+| A | 第一行<br>第二行 |
+| B | 第三行 |
+`)
+
+	cellInset := "table.cell(inset: (x: 2pt, y: ((((297mm - 37mm - 35mm) / 22) - zh(3)) / 2)))"
+	if count := strings.Count(output, cellInset); count != 6 {
+		t.Fatalf("expected all table cells to use grid-derived inset, got %d:\n%s", count, output)
+	}
+	if !strings.Contains(output, "#set par(leading: (((297mm - 37mm - 35mm) / 22) - zh(3)), spacing: 0pt, first-line-indent: 0pt)") {
+		t.Fatalf("expected table cell paragraphs to use grid-derived leading:\n%s", output)
+	}
+	if !strings.Contains(output, "第一行#linebreak()第二行") {
+		t.Fatalf("expected table <br> to render as a Typst linebreak:\n%s", output)
+	}
+}
+
+func TestTableRowLineEstimateCountsExplicitBreaks(t *testing.T) {
+	got := estimatedTableRowLines([]cellInfo{{content: "第一行#linebreak()第二行"}})
+	if got != 2 {
+		t.Fatalf("expected explicit table linebreak to count as two lines, got %d", got)
 	}
 }
 

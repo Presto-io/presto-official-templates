@@ -345,6 +345,10 @@ func (c *converter) renderInline(n ast.Node) string {
 		return ""
 
 	case ast.KindRawHTML:
+		raw := strings.TrimSpace(string(n.Text(c.source)))
+		if strings.EqualFold(raw, "<br>") || strings.EqualFold(raw, "<br/>") || strings.EqualFold(raw, "<br />") {
+			return "#linebreak()"
+		}
 		return ""
 
 	default:
@@ -1011,21 +1015,26 @@ func (c *converter) extractTable(n ast.Node) ([][]cellInfo, []east.Alignment) {
 }
 
 const tablePageLineBudget = 22
+const tableGridLineHeight = "((297mm - 37mm - 35mm) / 22)"
+const tableCellVerticalInset = "((" + tableGridLineHeight + " - zh(3)) / 2)"
 const tableCaptionBottomGap = "(((297mm - 37mm - 35mm) / 22) - zh(3))"
 
 func estimatedTableRowLines(row []cellInfo) int {
-	maxCellRunes := 0
+	maxCellLines := 1
 	for _, cell := range row {
-		cellRunes := len([]rune(strings.TrimSpace(cell.content)))
-		if cellRunes > maxCellRunes {
-			maxCellRunes = cellRunes
+		cellLines := 0
+		for _, segment := range strings.Split(strings.TrimSpace(cell.content), "#linebreak()") {
+			lines := (len([]rune(segment)) + 21) / 22
+			if lines < 1 {
+				lines = 1
+			}
+			cellLines += lines
+		}
+		if cellLines > maxCellLines {
+			maxCellLines = cellLines
 		}
 	}
-	lines := (maxCellRunes + 21) / 22
-	if lines < 1 {
-		return 1
-	}
-	return lines
+	return maxCellLines
 }
 
 func estimatedTableLines(rows [][]cellInfo, hasCaption bool) int {
@@ -1076,6 +1085,14 @@ func writeTableAlignments(buf *strings.Builder, maxCols int, colAligns []east.Al
 	buf.WriteString("),\n")
 }
 
+func tableCellContent(content string, strong bool) string {
+	trimmed := strings.TrimRight(content, "\n")
+	if strong {
+		trimmed = "#strong[" + trimmed + "]"
+	}
+	return "table.cell(inset: (x: 2pt, y: " + tableCellVerticalInset + "))[#set par(leading: " + tableCaptionBottomGap + ", spacing: 0pt, first-line-indent: 0pt)\n" + trimmed + "]"
+}
+
 func writeMeasuredTableWidth(buf *strings.Builder, rows [][]cellInfo, colAligns []east.Alignment, maxCols int, continuedCaptionText string) {
 	buf.WriteString("  let table-caption-width = calc.max(\n")
 	buf.WriteString("    measure(text(font: FONT_FS, size: zh(3))[" + continuedCaptionText + "]).width,\n")
@@ -1085,12 +1102,12 @@ func writeMeasuredTableWidth(buf *strings.Builder, rows [][]cellInfo, colAligns 
 	buf.WriteString("      stroke: none,\n")
 	if len(rows) > 0 {
 		for _, cell := range rows[0] {
-			buf.WriteString("      [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+			buf.WriteString("      " + tableCellContent(cell.content, true) + ",\n")
 		}
 	}
 	for rowIdx := 1; rowIdx < len(rows); rowIdx++ {
 		for _, cell := range rows[rowIdx] {
-			buf.WriteString("      [" + strings.TrimRight(cell.content, "\n") + "],\n")
+			buf.WriteString("      " + tableCellContent(cell.content, false) + ",\n")
 		}
 	}
 	buf.WriteString("    )).width,\n")
@@ -1183,7 +1200,7 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 			}
 			buf.WriteString("  table.cell(colspan: " + strconv.Itoa(maxCols) + ", align: center, stroke: none, inset: 0pt)[#context if here().page() == table-start-page { " + tableCaptionCellContent(captionText) + " } else { " + tableCaptionCellContent(continuedCaptionText) + " }],\n")
 			for _, cell := range rows[0] {
-				buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+				buf.WriteString("  " + tableCellContent(cell.content, true) + ",\n")
 			}
 			buf.WriteString("  ),\n")
 		} else {
@@ -1192,7 +1209,7 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 				buf.WriteString(tableCaptionCell(captionText, maxCols))
 			}
 			for _, cell := range rows[0] {
-				buf.WriteString("  [*" + strings.TrimRight(cell.content, "\n") + "*],\n")
+				buf.WriteString("  " + tableCellContent(cell.content, true) + ",\n")
 			}
 		}
 	}
@@ -1201,7 +1218,7 @@ func (c *converter) renderTableBlock(rows [][]cellInfo, colAligns []east.Alignme
 	for rowIdx := 1; rowIdx < len(rows); rowIdx++ {
 		row := rows[rowIdx]
 		for _, cell := range row {
-			buf.WriteString("  [" + strings.TrimRight(cell.content, "\n") + "],\n")
+			buf.WriteString("  " + tableCellContent(cell.content, false) + ",\n")
 		}
 	}
 
