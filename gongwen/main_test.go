@@ -11,7 +11,7 @@ func TestExampleOutputGoldenHash(t *testing.T) {
 	fm, body := parseFrontMatter(exampleMD)
 	output := convert(fm, body)
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-	const want = "3d9ac7a72231741f59d9435be4b88ca803b8d698638dca7280c58d94849f2c60"
+	const want = "f306823701a7de0413599384c6e0d32acdc16c2e92cad95cc8a2f8296e3ba0cf"
 	if got != want {
 		t.Fatalf("example output changed: got %s, want %s", got, want)
 	}
@@ -336,8 +336,8 @@ func TestTemplateUsesTextWeightForWholeHeadingBold(t *testing.T) {
 	if !strings.Contains(templateHead, `#let maybe-bold(enabled, body) = if enabled {`) {
 		t.Fatal("expected template to define maybe-bold helper")
 	}
-	if !strings.Contains(templateHead, `text(weight: "bold")[#body]`) {
-		t.Fatal("expected bold headings to set explicit text weight")
+	if !strings.Contains(templateHead, `text(weight: "bold", stroke: 0.2pt + black)[#body]`) {
+		t.Fatal("expected bold headings to set explicit text weight and stroke")
 	}
 	for _, want := range []string{
 		`#maybe-bold(bold)[#context h2-counter.display("一、")#body]`,

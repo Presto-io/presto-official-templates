@@ -78,7 +78,7 @@
 
 // 自定义标题函数
 #let maybe-bold(enabled, body) = if enabled {
-  text(weight: "bold")[#body]
+  text(weight: "bold", stroke: 0.2pt + black)[#body]
 } else {
   body
 }
