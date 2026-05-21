@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -85,7 +86,29 @@ func Run(manifestJSON, exampleMD string, convert func(string) string, info func(
 		return
 	}
 
-	fmt.Print(convert(string(input)))
+	output, err := safeConvert(convert, string(input))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error converting template: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Print(output)
+}
+
+func safeConvert(convert func(string) string, input string) (output string, err error) {
+	if convert == nil {
+		return "", errors.New("missing converter")
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			output = ""
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	output = convert(input)
+	if strings.TrimSpace(output) == "" {
+		return "", errors.New("converter produced empty Typst output")
+	}
+	return output, nil
 }
 
 // CleanFilenameBase returns a filesystem-safe basename while preserving the

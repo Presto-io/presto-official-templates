@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCleanFilenameBase(t *testing.T) {
 	tests := []struct {
@@ -19,5 +22,29 @@ func TestCleanFilenameBase(t *testing.T) {
 				t.Fatalf("CleanFilenameBase(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSafeConvertRejectsBlankOutput(t *testing.T) {
+	_, err := safeConvert(func(string) string { return " \n\t" }, "input")
+	if err == nil || !strings.Contains(err.Error(), "empty Typst output") {
+		t.Fatalf("expected empty Typst output error, got %v", err)
+	}
+}
+
+func TestSafeConvertRecoversPanic(t *testing.T) {
+	_, err := safeConvert(func(string) string { panic("boom") }, "input")
+	if err == nil || !strings.Contains(err.Error(), "panic: boom") {
+		t.Fatalf("expected panic error, got %v", err)
+	}
+}
+
+func TestSafeConvertReturnsNonBlankOutput(t *testing.T) {
+	got, err := safeConvert(func(string) string { return "#set page()\n" }, "input")
+	if err != nil {
+		t.Fatalf("expected successful conversion, got %v", err)
+	}
+	if got != "#set page()\n" {
+		t.Fatalf("unexpected output %q", got)
 	}
 }
