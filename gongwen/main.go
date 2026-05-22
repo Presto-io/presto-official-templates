@@ -100,10 +100,8 @@ func parseFrontMatter(input string) (frontMatter, string) {
 		}
 	}
 
-	// date. Accept data as a compatibility alias so a typo cannot break preview.
+	// date
 	if v, ok := raw["date"]; ok {
-		fm.Date = fmt.Sprintf("%v", v)
-	} else if v, ok := raw["data"]; ok {
 		fm.Date = fmt.Sprintf("%v", v)
 	}
 

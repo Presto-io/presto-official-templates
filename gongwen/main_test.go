@@ -55,17 +55,19 @@ template: "gongwen"
 	}
 }
 
-func TestDataAliasPopulatesDate(t *testing.T) {
+func TestDataDoesNotPopulateDate(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+
 	fm, _ := parseFrontMatter(`---
-title: "日期别名测试"
+title: "错误日期字段测试"
 data: "2026-05-22"
 ---
 
 正文内容。
 `)
 
-	if fm.Date != "2026-05-22" {
-		t.Fatalf("expected data alias to populate date, got %q", fm.Date)
+	if fm.Date != today {
+		t.Fatalf("expected data field to be ignored and date to default to today, got %q want %q", fm.Date, today)
 	}
 }
 
